@@ -349,7 +349,6 @@ public class Everything
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Diagnostics;
 
 public class Win32WindowManager {
     [DllImport("user32.dll")]
@@ -385,26 +384,6 @@ public class Win32WindowManager {
     [DllImport("user32.dll")]
     public static extern int GetWindowTextLength(IntPtr hWnd);
     
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetConsoleWindow();
-    
-    [DllImport("user32.dll")]
-    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    
-    [DllImport("user32.dll")]
-    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-    
-    [DllImport("kernel32.dll")]
-    public static extern bool AllocConsole();
-    
-    [DllImport("kernel32.dll")]
-    public static extern bool FreeConsole();
-    
-    [DllImport("kernel32.dll")]
-    public static extern bool AttachConsole(uint dwProcessId);
-    
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-    
     // Window show states
     public const int SW_HIDE = 0;
     public const int SW_SHOWNORMAL = 1;
@@ -434,27 +413,6 @@ public class Win32WindowManager {
         
         return success;
     }
-    
-    public static IntPtr FindWindowByProcessId(uint processId) {
-        IntPtr foundWindow = IntPtr.Zero;
-        EnumWindows((hWnd, lParam) => {
-            GetWindowThreadProcessId(hWnd, out uint windowProcessId);
-            if (windowProcessId == processId && IsWindowVisible(hWnd)) {
-                StringBuilder className = new StringBuilder(256);
-                GetClassName(hWnd, className, className.Capacity);
-                
-                // Prefer non-console windows, but accept console windows if that's all we have
-                if (className.ToString() != "ConsoleWindowClass" || foundWindow == IntPtr.Zero) {
-                    foundWindow = hWnd;
-                    if (className.ToString() != "ConsoleWindowClass") {
-                        return false; // Stop enumeration if we found a non-console window
-                    }
-                }
-            }
-            return true;
-        }, IntPtr.Zero);
-        return foundWindow;
-    }
 }
 "@
     }
@@ -466,20 +424,6 @@ public class Win32WindowManager {
     if ($appPath -notmatch '(^[A-Z]:\\|^\\\\|[\\{.,])') {
         $procName = [System.IO.Path]::GetFileNameWithoutExtension($appPath)
         $targetProcesses += Get-Process -Name $procName -ErrorAction SilentlyContinue
-    } else {
-        # For full paths, extract the executable name
-        $exeName = [System.IO.Path]::GetFileNameWithoutExtension($appPath)
-        $targetProcesses += Get-Process -Name $exeName -ErrorAction SilentlyContinue
-        
-        # Also try to find processes with the exact path
-        $allProcesses = Get-Process | Where-Object { 
-            try { 
-                $_.Path -and $_.Path -eq $appPath 
-            } catch { 
-                $false 
-            }
-        }
-        $targetProcesses += $allProcesses
     }
     
     # Strategy 2: Try common process name variations for popular apps
@@ -497,14 +441,6 @@ public class Win32WindowManager {
         'obs studio' = @('obs64', 'obs32')
         'vlc' = @('vlc')
         'photoshop' = @('Photoshop')
-        'cmd' = @('cmd')
-        'powershell' = @('powershell', 'pwsh')
-        'git' = @('git')
-        'python' = @('python', 'python3')
-        'node' = @('node')
-        'npm' = @('npm')
-        'docker' = @('docker')
-        'neovim' = @('nvim')
     }
     
     foreach ($key in $commonProcessNames.Keys) {
@@ -526,43 +462,21 @@ public class Win32WindowManager {
         }
     }
     
-    # Strategy 4: For command line apps, look for console windows and processes without main windows
-    if (-not $targetProcesses -and $appPath -match '\.exe$') {
-        $exeName = [System.IO.Path]::GetFileNameWithoutExtension($appPath)
-        $consoleProcesses = Get-Process | Where-Object { 
-            $_.ProcessName -like "*$exeName*" -or $exeName -like "*$($_.ProcessName)*"
-        }
-        $targetProcesses += $consoleProcesses
-    }
-    
     # Try to bring window to foreground
     if ($targetProcesses) {
         foreach ($proc in $targetProcesses) {
-            $windowHandle = $null
-            
-            # First try the main window handle
             if ($proc.MainWindowHandle -ne 0 -and [Win32WindowManager]::IsWindow($proc.MainWindowHandle)) {
-                $windowHandle = $proc.MainWindowHandle
-            } else {
-                # For processes without main windows (like console apps), find any associated window
-                $foundWindow = [Win32WindowManager]::FindWindowByProcessId($proc.Id)
-                if ($foundWindow -ne [IntPtr]::Zero) {
-                    $windowHandle = $foundWindow
-                }
-            }
-            
-            if ($windowHandle) {
                 try {
                     # Check if window is minimized and restore it
-                    if ([Win32WindowManager]::IsIconic($windowHandle)) {
-                        [void][Win32WindowManager]::ShowWindow($windowHandle, [Win32WindowManager]::SW_RESTORE)
+                    if ([Win32WindowManager]::IsIconic($proc.MainWindowHandle)) {
+                        [void][Win32WindowManager]::ShowWindow($proc.MainWindowHandle, [Win32WindowManager]::SW_RESTORE)
                     }
                     
                     # Make sure window is visible
-                    [void][Win32WindowManager]::ShowWindow($windowHandle, [Win32WindowManager]::SW_SHOW)
+                    [void][Win32WindowManager]::ShowWindow($proc.MainWindowHandle, [Win32WindowManager]::SW_SHOW)
                     
                     # Force bring to foreground
-                    $success = [Win32WindowManager]::ForceSetForegroundWindow($windowHandle)
+                    $success = [Win32WindowManager]::ForceSetForegroundWindow($proc.MainWindowHandle)
                     
                     if ($success) {
                         Write-Host ("`n🔎 $($appSelected.Name) is already running. Brought to foreground.") -ForegroundColor Cyan
@@ -573,45 +487,16 @@ public class Win32WindowManager {
                     # Continue to next process if this one fails
                     continue
                 }
-            } else {
-                # For processes without visible windows (pure console apps), just report they're running
-                Write-Host ("`n🔎 $($appSelected.Name) is already running (console application).") -ForegroundColor Cyan
-                $broughtToFront = $true
-                break
             }
         }
     }
     if (-not $broughtToFront) {
         Write-Host ("`n🚀 Launching: {0}" -f $appSelected.Name)
         try {
-            # Check if this is a UWP app path (contains GUID pattern)
-            if ($appPath -match '\{[0-9A-F-]{36}\}') {
-                # This is a UWP app, use shell:AppsFolder
+            if ($appPath -match '(^[A-Z]:\\|^\\\\|[\\{.,])') {
                 Start-Process "shell:AppsFolder\$appPath"
-            } elseif ($appPath -match '(^[A-Z]:\\|^\\\\)') {
-                # Handle full file system paths
-                if ($appPath -match '\.exe$') {
-                    # Direct executable path
-                    Start-Process $appPath
-                } else {
-                    # Other shell apps
-                    Start-Process "shell:AppsFolder\$appPath"
-                }
             } else {
-                # Handle app names or relative paths
-                if (Test-Path "$appPath.exe") {
-                    Start-Process "$appPath.exe"
-                } elseif (Test-Path $appPath) {
-                    Start-Process $appPath
-                } else {
-                    # Try to find in PATH or assume it's an app name
-                    $foundInPath = Get-Command $appPath -ErrorAction SilentlyContinue
-                    if ($foundInPath) {
-                        Start-Process $foundInPath.Source
-                    } else {
-                        Start-Process "$appPath.exe"
-                    }
-                }
+                Start-Process "$appPath.exe"
             }
         } catch {
             Write-Host "❌ Failed to launch: $appPath" -ForegroundColor Red
