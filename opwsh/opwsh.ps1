@@ -18,9 +18,31 @@ function open-pwsh-get {
     return $Script:CachedApps
 }
 
+# Function to get shortcut target information
+function Get-ShortcutTarget {
+    param([string]$ShortcutPath)
+    
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($ShortcutPath)
+        return @{
+            TargetPath = $shortcut.TargetPath
+            Arguments = $shortcut.Arguments
+            WorkingDirectory = $shortcut.WorkingDirectory
+            Description = $shortcut.Description
+        }
+    } catch {
+        return $null
+    } finally {
+        if ($shell) { 
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null 
+        }
+    }
+}
+
 # Function to manually refresh the app cache
 function open-pwsh-refresh {
-    Write-Host "🔄 Refreshing app cache..." -ForegroundColor Cyan
+    Write-Host "🔄 Refreshing app cache with target path parsing..." -ForegroundColor Cyan
     
     # Parse Start Menu directories for .lnk files
     # Process user directory first (higher priority), then system directory
@@ -30,36 +52,51 @@ function open-pwsh-refresh {
     )
     
     $apps = @()
-    $seenApps = @{}  # Hash table to track duplicates by name
+    $seenTargets = @{}  # Hash table to track duplicates by target path
     
     foreach ($pathInfo in $paths) {
         if (Test-Path $pathInfo.Path) {
             $lnkFiles = Get-ChildItem -Path $pathInfo.Path -Recurse -Filter *.lnk -ErrorAction SilentlyContinue
             foreach ($lnk in $lnkFiles) {
-                $appName = $lnk.BaseName
+                $targetInfo = Get-ShortcutTarget -ShortcutPath $lnk.FullName
                 
-                # If we haven't seen this app name before, or if this is a user-specific path
-                # (which takes priority over system-wide), add it
-                if (-not $seenApps.ContainsKey($appName) -or $pathInfo.Priority -eq "User") {
-                    $appObject = [PSCustomObject]@{
-                        Name = $appName
-                        FullPath = $lnk.FullName
-                        AppID = $lnk.FullName  # Use full path as AppID for launching
-                        Source = $pathInfo.Priority
-                    }
+                if ($targetInfo -and $targetInfo.TargetPath) {
+                    # Check if target exists - skip broken shortcuts entirely
+                    $targetExists = Test-Path $targetInfo.TargetPath -ErrorAction SilentlyContinue
                     
-                    if ($seenApps.ContainsKey($appName)) {
-                        # Replace the system-wide version with user-specific version
-                        $indexToReplace = $apps.FindIndex({ param($app) $app.Name -eq $appName })
-                        if ($indexToReplace -ge 0) {
-                            $apps[$indexToReplace] = $appObject
+                    if ($targetExists) {
+                        # Normalize target path for comparison (handle case sensitivity and resolve variables)
+                        $normalizedTarget = $targetInfo.TargetPath.ToLower()
+                        
+                        # Use target path as the key for true deduplication
+                        if (-not $seenTargets.ContainsKey($normalizedTarget) -or $pathInfo.Priority -eq "User") {
+                            $appObject = [PSCustomObject]@{
+                                Name = $lnk.BaseName
+                                Source = $pathInfo.Priority
+                                TargetPath = $targetInfo.TargetPath
+                                ShortcutPath = $lnk.FullName  # Backend only - for launching
+                            }
+                            
+                            if ($seenTargets.ContainsKey($normalizedTarget)) {
+                                # Replace system version with user version - find index manually
+                                $indexToReplace = -1
+                                for ($i = 0; $i -lt $apps.Count; $i++) {
+                                    if ($apps[$i].TargetPath.ToLower() -eq $normalizedTarget) {
+                                        $indexToReplace = $i
+                                        break
+                                    }
+                                }
+                                if ($indexToReplace -ge 0) {
+                                    $apps[$indexToReplace] = $appObject
+                                }
+                            } else {
+                                # First time seeing this target
+                                $apps += $appObject
+                            }
+                            
+                            $seenTargets[$normalizedTarget] = $pathInfo.Priority
                         }
-                    } else {
-                        # First time seeing this app
-                        $apps += $appObject
                     }
-                    
-                    $seenApps[$appName] = $pathInfo.Priority
                 }
             }
         }
@@ -72,10 +109,10 @@ function open-pwsh-refresh {
         $Script:CachedApps | Export-Clixml $Script:AppCacheFile -Force
         $userApps = ($Script:CachedApps | Where-Object { $_.Source -eq "User" }).Count
         $systemApps = ($Script:CachedApps | Where-Object { $_.Source -eq "System" }).Count
-        Write-Host "✅ App cache refreshed and saved! Found $($Script:CachedApps.Count) unique apps ($userApps user, $systemApps system)." -ForegroundColor Green
+        Write-Host "✅ App cache refreshed and saved! Found $($Script:CachedApps.Count) valid apps ($userApps user, $systemApps system)." -ForegroundColor Green
     } catch {
         Write-Host "⚠️ Failed to save cache file: $_" -ForegroundColor Yellow
-        Write-Host "✅ App cache refreshed (memory only)! Found $($Script:CachedApps.Count) unique apps." -ForegroundColor Green
+        Write-Host "✅ App cache refreshed (memory only)! Found $($Script:CachedApps.Count) valid apps." -ForegroundColor Green
     }
 }
 
@@ -391,17 +428,15 @@ public class Everything
         $nameWidths = $appMatchArray | ForEach-Object { $_.Name.Length }
         $maxNameLen = ($nameWidths | Measure-Object -Maximum).Maximum
         
-        $sourceWidths = $appMatchArray | ForEach-Object { 
-            if ($_.Source) { $_.Source.Length } else { 6 } 
-        }
-        $maxSourceLen = ($sourceWidths | Measure-Object -Maximum).Maximum
-        
-        Write-Host ("    {0,-$maxNameLen}  {1,-$maxSourceLen}  {2}" -f 'Name', 'Source', 'Path')
+        Write-Host ("    {0,-$maxNameLen}  {1}" -f 'Name', 'Target Path')
         for ($i = 0; $i -lt $appMatchArray.Count; $i++) {
             $app = $appMatchArray[$i]
-            $sourceDisplay = if ($app.Source) { $app.Source } else { 'System' }
-            $pathDisplay = if ($app.FullPath) { Split-Path $app.FullPath -Parent } else { '<no path>' }
-            Write-Host ("  [{0}] {1,-$maxNameLen}  {2,-$maxSourceLen}  {3}" -f ($i + 1), $app.Name, $sourceDisplay, $pathDisplay)
+            $targetDisplay = if ($app.TargetPath) { 
+                $app.TargetPath
+            } else {
+                '<unknown>'
+            }
+            Write-Host ("  [{0}] {1,-$maxNameLen}  {2}" -f ($i + 1), $app.Name, $targetDisplay)
         }
         
         $choice = Read-Host "Enter the number of the app to open, or 'n' to cancel"
@@ -417,11 +452,12 @@ public class Everything
     }
 
     # Check if we have a valid path to the .lnk file
-    if (-not $appSelected.AppID -or -not (Test-Path $appSelected.AppID)) {
-        Write-Host "❌ Selected app does not have a valid path." -ForegroundColor Red
+    if (-not $appSelected.ShortcutPath -or -not (Test-Path $appSelected.ShortcutPath)) {
+        Write-Host "❌ Selected app does not have a valid shortcut path." -ForegroundColor Red
         return
     }
-    $appPath = $appSelected.AppID
+    
+    $appPath = $appSelected.ShortcutPath
 
     # Check if process is already running and bring to foreground if so
     $broughtToFront = $false
@@ -503,10 +539,10 @@ public class Win32WindowManager {
     # Try multiple strategies to find the running process
     $targetProcesses = @()
     
-    # Strategy 1: Direct process name match
-    if ($appPath -notmatch '(^[A-Z]:\\|^\\\\|[\\{.,])') {
-        $procName = [System.IO.Path]::GetFileNameWithoutExtension($appPath)
-        $targetProcesses += Get-Process -Name $procName -ErrorAction SilentlyContinue
+    # Strategy 1: Use the target path to get process name (most accurate)
+    if ($appSelected.TargetPath -and (Test-Path $appSelected.TargetPath -ErrorAction SilentlyContinue)) {
+        $targetExeName = [System.IO.Path]::GetFileNameWithoutExtension($appSelected.TargetPath)
+        $targetProcesses += Get-Process -Name $targetExeName -ErrorAction SilentlyContinue
     }
     
     # Strategy 2: Try common process name variations for popular apps
@@ -544,6 +580,9 @@ public class Win32WindowManager {
             }
         }
     }
+    
+    # Remove duplicates
+    $targetProcesses = $targetProcesses | Sort-Object Id -Unique
     
     # Try to bring window to foreground
     if ($targetProcesses) {
