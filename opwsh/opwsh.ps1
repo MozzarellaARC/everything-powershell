@@ -21,15 +21,61 @@ function open-pwsh-get {
 # Function to manually refresh the app cache
 function open-pwsh-refresh {
     Write-Host "🔄 Refreshing app cache..." -ForegroundColor Cyan
-    $Script:CachedApps = Get-StartApps | Sort-Object Name
+    
+    # Parse Start Menu directories for .lnk files
+    # Process user directory first (higher priority), then system directory
+    $paths = @(
+        @{ Path = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"; Priority = "User" },
+        @{ Path = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"; Priority = "System" }
+    )
+    
+    $apps = @()
+    $seenApps = @{}  # Hash table to track duplicates by name
+    
+    foreach ($pathInfo in $paths) {
+        if (Test-Path $pathInfo.Path) {
+            $lnkFiles = Get-ChildItem -Path $pathInfo.Path -Recurse -Filter *.lnk -ErrorAction SilentlyContinue
+            foreach ($lnk in $lnkFiles) {
+                $appName = $lnk.BaseName
+                
+                # If we haven't seen this app name before, or if this is a user-specific path
+                # (which takes priority over system-wide), add it
+                if (-not $seenApps.ContainsKey($appName) -or $pathInfo.Priority -eq "User") {
+                    $appObject = [PSCustomObject]@{
+                        Name = $appName
+                        FullPath = $lnk.FullName
+                        AppID = $lnk.FullName  # Use full path as AppID for launching
+                        Source = $pathInfo.Priority
+                    }
+                    
+                    if ($seenApps.ContainsKey($appName)) {
+                        # Replace the system-wide version with user-specific version
+                        $indexToReplace = $apps.FindIndex({ param($app) $app.Name -eq $appName })
+                        if ($indexToReplace -ge 0) {
+                            $apps[$indexToReplace] = $appObject
+                        }
+                    } else {
+                        # First time seeing this app
+                        $apps += $appObject
+                    }
+                    
+                    $seenApps[$appName] = $pathInfo.Priority
+                }
+            }
+        }
+    }
+    
+    $Script:CachedApps = $apps | Sort-Object Name
     
     # Save to cache file
     try {
         $Script:CachedApps | Export-Clixml $Script:AppCacheFile -Force
-        Write-Host "✅ App cache refreshed and saved!" -ForegroundColor Green
+        $userApps = ($Script:CachedApps | Where-Object { $_.Source -eq "User" }).Count
+        $systemApps = ($Script:CachedApps | Where-Object { $_.Source -eq "System" }).Count
+        Write-Host "✅ App cache refreshed and saved! Found $($Script:CachedApps.Count) unique apps ($userApps user, $systemApps system)." -ForegroundColor Green
     } catch {
         Write-Host "⚠️ Failed to save cache file: $_" -ForegroundColor Yellow
-        Write-Host "✅ App cache refreshed (memory only)!" -ForegroundColor Green
+        Write-Host "✅ App cache refreshed (memory only)! Found $($Script:CachedApps.Count) unique apps." -ForegroundColor Green
     }
 }
 
@@ -345,16 +391,17 @@ public class Everything
         $nameWidths = $appMatchArray | ForEach-Object { $_.Name.Length }
         $maxNameLen = ($nameWidths | Measure-Object -Maximum).Maximum
         
-        $appIdWidths = $appMatchArray | ForEach-Object { 
-            if ($_.AppID) { $_.AppID.Length } else { 9 } 
+        $sourceWidths = $appMatchArray | ForEach-Object { 
+            if ($_.Source) { $_.Source.Length } else { 6 } 
         }
-        $maxAppIdLen = ($appIdWidths | Measure-Object -Maximum).Maximum
+        $maxSourceLen = ($sourceWidths | Measure-Object -Maximum).Maximum
         
-        Write-Host ("    {0,-$maxNameLen}  {1,-$maxAppIdLen}" -f 'Name', 'AppID')
+        Write-Host ("    {0,-$maxNameLen}  {1,-$maxSourceLen}  {2}" -f 'Name', 'Source', 'Path')
         for ($i = 0; $i -lt $appMatchArray.Count; $i++) {
             $app = $appMatchArray[$i]
-            $appIdDisplay = if ($app.AppID) { $app.AppID } else { '<no AppID>' }
-            Write-Host ("  [{0}] {1,-$maxNameLen}  {2,-$maxAppIdLen}" -f ($i + 1), $app.Name, $appIdDisplay)
+            $sourceDisplay = if ($app.Source) { $app.Source } else { 'System' }
+            $pathDisplay = if ($app.FullPath) { Split-Path $app.FullPath -Parent } else { '<no path>' }
+            Write-Host ("  [{0}] {1,-$maxNameLen}  {2,-$maxSourceLen}  {3}" -f ($i + 1), $app.Name, $sourceDisplay, $pathDisplay)
         }
         
         $choice = Read-Host "Enter the number of the app to open, or 'n' to cancel"
@@ -369,9 +416,9 @@ public class Everything
         $appSelected = $appMatchArray[[int]$choice - 1]
     }
 
-    # Simplified AppID check
-    if (-not $appSelected.AppID) {
-        Write-Host "❌ Selected app does not have an AppID property." -ForegroundColor Red
+    # Check if we have a valid path to the .lnk file
+    if (-not $appSelected.AppID -or -not (Test-Path $appSelected.AppID)) {
+        Write-Host "❌ Selected app does not have a valid path." -ForegroundColor Red
         return
     }
     $appPath = $appSelected.AppID
@@ -529,37 +576,20 @@ public class Win32WindowManager {
     if (-not $broughtToFront) {
         Write-Host ("`n🚀 Launching: {0}" -f $appSelected.Name)
         try {
-            if ($appPath -match '(^[A-Z]:\\|^\\\\|[\\{.,])') {
-                # Use cmd /c start for UWP apps to completely detach
-                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-                $startInfo.FileName = "cmd.exe"
-                $startInfo.Arguments = "/c start shell:AppsFolder\$appPath"
-                $startInfo.UseShellExecute = $false
-                $startInfo.CreateNoWindow = $true
-                $startInfo.RedirectStandardOutput = $true
-                $startInfo.RedirectStandardError = $true
-                $process = [System.Diagnostics.Process]::Start($startInfo)
-                $null = $process.WaitForExit(1000)  # Suppress the True output
-            } else {
-                # Use cmd /c start for regular executables
-                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-                $startInfo.FileName = "cmd.exe"
-                $startInfo.Arguments = "/c start `"`" `"$appPath.exe`""
-                $startInfo.UseShellExecute = $false
-                $startInfo.CreateNoWindow = $true
-                $startInfo.RedirectStandardOutput = $true
-                $startInfo.RedirectStandardError = $true
-                $process = [System.Diagnostics.Process]::Start($startInfo)
-                $null = $process.WaitForExit(1000)  # Suppress the True output
-            }
+            # Launch .lnk file directly using Start-Process
+            $null = Start-Process -FilePath $appPath -WindowStyle Normal -PassThru
         } catch {
-            # Fallback to original method
+            # Fallback: Use cmd /c start with the .lnk file
             try {
-                if ($appPath -match '(^[A-Z]:\\|^\\\\|[\\{.,])') {
-                    $null = Start-Process "shell:AppsFolder\$appPath" -WindowStyle Normal -PassThru
-                } else {
-                    $null = Start-Process "$appPath.exe" -WindowStyle Normal -PassThru
-                }
+                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+                $startInfo.FileName = "cmd.exe"
+                $startInfo.Arguments = "/c start `"`" `"$appPath`""
+                $startInfo.UseShellExecute = $false
+                $startInfo.CreateNoWindow = $true
+                $startInfo.RedirectStandardOutput = $true
+                $startInfo.RedirectStandardError = $true
+                $process = [System.Diagnostics.Process]::Start($startInfo)
+                $null = $process.WaitForExit(1000)  # Suppress the True output
             } catch {
                 Write-Host "❌ Failed to launch: $appPath" -ForegroundColor Red
                 Write-Host $_.Exception.Message -ForegroundColor DarkRed
