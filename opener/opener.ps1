@@ -2,7 +2,7 @@
 $Script:AppCacheFile = "$env:TEMP\PowerShell_AppCache.xml"
 
 # Load apps from cache file or create cache if it doesn't exist
-function open-get {
+function oget {
     if (Test-Path $Script:AppCacheFile) {
         try {
             $Script:CachedApps = Import-Clixml $Script:AppCacheFile
@@ -14,12 +14,12 @@ function open-get {
     
     # Cache doesn't exist or is corrupted, create it
     Write-Host "🔄 Building app cache (first time setup)..." -ForegroundColor Cyan
-    open-refresh
+    oref
     return $Script:CachedApps
 }
 
 # Function to manually refresh the app cache
-function open-refresh {
+function oref {
     Write-Host "🔄 Refreshing app cache..." -ForegroundColor Cyan
     $Script:CachedApps = Get-StartApps | Sort-Object Name
     
@@ -34,7 +34,7 @@ function open-refresh {
 }
 
 # Function to clear the app cache
-function Clear-AppCache {
+function oclear {
     if (Test-Path $Script:AppCacheFile) {
         Remove-Item $Script:AppCacheFile -Force
         Write-Host "🗑️ App cache cleared!" -ForegroundColor Green
@@ -44,7 +44,7 @@ function Clear-AppCache {
     $Script:CachedApps = $null
 }
 
-function open-dir {
+function od {
     param(
         [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
         [string[]]$Name
@@ -177,7 +177,7 @@ public class Everything
     }
 }
 
-function open {
+function o {
     param(
         [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
         [string[]]$Name
@@ -195,7 +195,7 @@ function open {
     }
     
     # Use cached apps from file
-    $apps = open-get
+    $apps = oget
     if (-not $apps) {
         Write-Host "❌ No Start Menu apps found." -ForegroundColor Red
         return
