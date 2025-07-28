@@ -24,7 +24,7 @@ The code parse strings from data that is created when you open up an application
 *Before installing it might not work on Windows 10 and Powershell bellow version 7*
 
 ### *Installation:*
-***requires: Powershell 7***
+***requires: Powershell 7 and [Everything by VoidTools](https://www.voidtools.com/)***
 
 
 1. open Powershell 7
@@ -37,6 +37,7 @@ git clone https://github.com/MozzarellaARC/the-all-powershell.git```
 7. (*optional*) or if you don't have git installed you can clone this repo
 8. type this in your PowerShell 7 ```. $PROFILE``` (don't *forget the dots*)
 
+<span style="color: #e1f084;">***CAVEATS: Everything app must run in the background for a more precision search querries***</span>
 
 ### *List of command:*
 
