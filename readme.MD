@@ -24,7 +24,7 @@ The code parse strings from data that is created when you open up an application
 *Before installing it might not work on Windows 10 and Powershell bellow version 7*
 
 ### *Installation:*
-***requires: Powershell 7 and [Everything by VoidTools](https://www.voidtools.com/)***
+***requires: Powershell 7 and [Everything by VoidTools](https://www.voidtools.com/) version 1.4x***
 
 
 1. open Powershell 7
