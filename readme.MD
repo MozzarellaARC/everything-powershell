@@ -37,7 +37,7 @@ git clone https://github.com/MozzarellaARC/the-all-powershell.git```
 7. (*optional*) or if you don't have git installed you can clone this repo
 8. type this in your PowerShell 7 ```. $PROFILE``` (don't *forget the dots*)
 
-<span style="color: #e1f084;">***CAVEATS: Everything app must run in the background for a more precision search querries***</span>
+***CAVEATS: Everything app must run in the background for a more precision search querries !!!***
 
 ### *List of command:*
 
