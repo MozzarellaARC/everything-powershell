@@ -44,7 +44,7 @@ function oclear {
     $Script:CachedApps = $null
 }
 
-function od {
+function open-dir {
     param(
         [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
         [string[]]$Name
@@ -188,7 +188,7 @@ public class Everything
     }
 }
 
-function o {
+function open {
     param(
         [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
         [string[]]$Name
@@ -204,7 +204,7 @@ function o {
         'ps' = 'PowerShell'
         # ADD MORE HERE
     }
-    
+
     # Use cached apps from file
     $apps = oget
     if (-not $apps) {
@@ -567,3 +567,6 @@ public class Win32WindowManager {
         }
     }
 }
+
+    Set-Alias o open
+    Set-Alias od open-dir
