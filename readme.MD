@@ -49,3 +49,13 @@ oclear  -Clear cache
 
 es      -Perfrom directory search using Everything SDK
 ```
+
+### *Command Aliasses:*
+
+```
+0 as open
+od as open-dir
+oget as open-pwsh-get
+oref as open-pwsh-refresh
+oclear as open-pwsh-clear
+```
