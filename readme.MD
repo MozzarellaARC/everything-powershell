@@ -10,7 +10,7 @@ Everything SDK
 
 - Application openner through Powershell using `open yourapplicationnamehere`
 
-- Appication dir openner through Powershell using `open-dir yourfilenamehere`
+- Appication directory openner through Powershell using `open-dir yourfilenamehere`
 
 ## *How does it work?*
 The code parse strings from data that is created when you open up an application, so if you have an application that is not yet open the first time or an app that is being used without installation this script may not work properly.
@@ -22,6 +22,21 @@ The code parse strings from data that is created when you open up an application
 
 
 *Before installing it might not work on Windows 10 and Powershell bellow version 7*
+
+### *Installation:*
+***requires: Powershell 7***
+
+
+1. open Powershell 7
+2. type this comand in the interface ```$PROFILE```
+3. check if such directory is created ```C:\Users\YourUserName\Documents\PowerShell```
+4. (*optional*) if not, you can create new folder and name it ```PowerShell```
+5. type this in your Powershell 7 interface ```cd C:\Users\YourUserName\Documents\PowerShell```
+6. type this in your Powershell 7 interface ```
+git clone https://github.com/MozzarellaARC/the-all-powershell.git```
+7. (*optional*) or if you don't have git installed you can clone this repo
+8. type this in your PowerShell 7 ```. $PROFILE``` (don't *forget the dots*)
+
 
 ### *List of command:*
 
