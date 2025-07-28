@@ -97,6 +97,12 @@ public class Everything
 
     [DllImport(@"$dllPath", CharSet = CharSet.Unicode)]
     public static extern int Everything_GetResultFullPathNameW(int nIndex, System.Text.StringBuilder lpString, int nMaxCount);
+    
+    [DllImport(@"$dllPath")]
+    public static extern void Everything_SetMax(int dwMax);
+    
+    [DllImport(@"$dllPath")]
+    public static extern void Everything_SetOffset(int dwOffset);
 }
 "@
         Add-Type -TypeDefinition $source -Language CSharp
@@ -109,9 +115,14 @@ public class Everything
     
     # Start with searching for the main app name
     $everythingQuery = "$mainAppName *.exe"
-    [Everything]::Everything_SetSearchW($everythingQuery)
-    [Everything]::Everything_QueryW($true)
-    $numResults = [Everything]::Everything_GetNumResults()
+    try {
+        [Everything]::Everything_SetSearchW($everythingQuery)
+        [Everything]::Everything_QueryW($true)
+        $numResults = [Everything]::Everything_GetNumResults()
+    } catch {
+        Write-Host "❌ Everything SDK error during search" -ForegroundColor Red
+        return
+    }
 
     if ($numResults -eq 0) {
         Write-Host "❌ No executables found for: $searchInput" -ForegroundColor Red
@@ -240,15 +251,26 @@ public class Everything
 
     [DllImport(@"$dllPath", CharSet = CharSet.Unicode)]
     public static extern int Everything_GetResultFullPathNameW(int nIndex, System.Text.StringBuilder lpString, int nMaxCount);
+    
+    [DllImport(@"$dllPath")]
+    public static extern void Everything_SetMax(int dwMax);
+    
+    [DllImport(@"$dllPath")]
+    public static extern void Everything_SetOffset(int dwOffset);
 }
 "@
             Add-Type -TypeDefinition $source -Language CSharp
         }
 
         $everythingQuery = "$userInput *.exe"
-        [Everything]::Everything_SetSearchW($everythingQuery)
-        [Everything]::Everything_QueryW($true)
-        $numResults = [Everything]::Everything_GetNumResults()
+        try {
+            [Everything]::Everything_SetSearchW($everythingQuery)
+            [Everything]::Everything_QueryW($true)
+            $numResults = [Everything]::Everything_GetNumResults()
+        } catch {
+            Write-Host "❌ Everything SDK error during fallback search" -ForegroundColor Red
+            return
+        }
 
         if ($numResults -eq 0) {
             Write-Host "❌ No app matches input: $userInput (not found in Start Menu or Everything index)" -ForegroundColor Red
@@ -290,10 +312,24 @@ public class Everything
         }
         Write-Host ("\n🚀 Launching: {0}" -f $exeToLaunch)
         try {
-            Start-Process $exeToLaunch
+            # Use cmd /c start to completely detach the process
+            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $startInfo.FileName = "cmd.exe"
+            $startInfo.Arguments = "/c start `"`" `"$exeToLaunch`""
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $process = [System.Diagnostics.Process]::Start($startInfo)
+            $null = $process.WaitForExit(1000)  # Suppress the True output
         } catch {
-            Write-Host "❌ Failed to launch: $exeToLaunch" -ForegroundColor Red
-            Write-Host $_.Exception.Message -ForegroundColor DarkRed
+            # Fallback to original method
+            try {
+                $null = Start-Process $exeToLaunch -WindowStyle Normal -PassThru
+            } catch {
+                Write-Host "❌ Failed to launch: $exeToLaunch" -ForegroundColor Red
+                Write-Host $_.Exception.Message -ForegroundColor DarkRed
+            }
         }
         return
     }
@@ -494,13 +530,40 @@ public class Win32WindowManager {
         Write-Host ("`n🚀 Launching: {0}" -f $appSelected.Name)
         try {
             if ($appPath -match '(^[A-Z]:\\|^\\\\|[\\{.,])') {
-                Start-Process "shell:AppsFolder\$appPath"
+                # Use cmd /c start for UWP apps to completely detach
+                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+                $startInfo.FileName = "cmd.exe"
+                $startInfo.Arguments = "/c start shell:AppsFolder\$appPath"
+                $startInfo.UseShellExecute = $false
+                $startInfo.CreateNoWindow = $true
+                $startInfo.RedirectStandardOutput = $true
+                $startInfo.RedirectStandardError = $true
+                $process = [System.Diagnostics.Process]::Start($startInfo)
+                $null = $process.WaitForExit(1000)  # Suppress the True output
             } else {
-                Start-Process "$appPath.exe"
+                # Use cmd /c start for regular executables
+                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+                $startInfo.FileName = "cmd.exe"
+                $startInfo.Arguments = "/c start `"`" `"$appPath.exe`""
+                $startInfo.UseShellExecute = $false
+                $startInfo.CreateNoWindow = $true
+                $startInfo.RedirectStandardOutput = $true
+                $startInfo.RedirectStandardError = $true
+                $process = [System.Diagnostics.Process]::Start($startInfo)
+                $null = $process.WaitForExit(1000)  # Suppress the True output
             }
         } catch {
-            Write-Host "❌ Failed to launch: $appPath" -ForegroundColor Red
-            Write-Host $_.Exception.Message -ForegroundColor DarkRed
+            # Fallback to original method
+            try {
+                if ($appPath -match '(^[A-Z]:\\|^\\\\|[\\{.,])') {
+                    $null = Start-Process "shell:AppsFolder\$appPath" -WindowStyle Normal -PassThru
+                } else {
+                    $null = Start-Process "$appPath.exe" -WindowStyle Normal -PassThru
+                }
+            } catch {
+                Write-Host "❌ Failed to launch: $appPath" -ForegroundColor Red
+                Write-Host $_.Exception.Message -ForegroundColor DarkRed
+            }
         }
     }
 }
