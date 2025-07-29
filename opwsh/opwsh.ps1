@@ -64,7 +64,7 @@ function Clear-AppCache {
 }
 
 # Load Everything SDK
-function Load-EverythingSDK {
+function Start-EverythingSDK {
     if (-not ([System.Management.Automation.PSTypeName]'Everything').Type) {
         $scriptDir = $PSScriptRoot
         if (-not $scriptDir) { $scriptDir = Split-Path $PSCommandPath }
@@ -97,7 +97,7 @@ public class Everything
 function Search-EverythingEXE {
     param([string]$Query)
     
-    Load-EverythingSDK
+    Start-EverythingSDK
     
     try {
         [Everything]::Everything_SetSearchW("$Query *.exe")
