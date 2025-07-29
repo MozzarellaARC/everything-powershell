@@ -186,12 +186,6 @@ public class Everything
     
     [DllImport(@"$dllPath")]
     public static extern void Everything_SetOffset(int dwOffset);
-    
-    [DllImport(@"$dllPath")]
-    public static extern void Everything_Reset();
-    
-    [DllImport(@"$dllPath")]
-    public static extern void Everything_CleanUp();
 }
 "@
         Add-Type -TypeDefinition $source -Language CSharp
@@ -210,15 +204,11 @@ public class Everything
         $numResults = [Everything]::Everything_GetNumResults()
     } catch {
         Write-Host "❌ Everything SDK error during search" -ForegroundColor Red
-        # Clean up Everything SDK state
-        try { [Everything]::Everything_Reset() } catch { }
         return
     }
 
     if ($numResults -eq 0) {
         Write-Host "❌ No executables found for: $searchInput" -ForegroundColor Red
-        # Clean up Everything SDK state
-        try { [Everything]::Everything_Reset() } catch { }
         return
     }
 
@@ -244,9 +234,6 @@ public class Everything
             }
         }
     }
-
-    # Clean up Everything SDK state after retrieving results
-    try { [Everything]::Everything_Reset() } catch { }
 
     $exeResults = $exeResults | Sort-Object -Unique
     if ($exeResults.Count -eq 0) {
@@ -353,12 +340,6 @@ public class Everything
     
     [DllImport(@"$dllPath")]
     public static extern void Everything_SetOffset(int dwOffset);
-    
-    [DllImport(@"$dllPath")]
-    public static extern void Everything_Reset();
-    
-    [DllImport(@"$dllPath")]
-    public static extern void Everything_CleanUp();
 }
 "@
             Add-Type -TypeDefinition $source -Language CSharp
@@ -371,15 +352,11 @@ public class Everything
             $numResults = [Everything]::Everything_GetNumResults()
         } catch {
             Write-Host "❌ Everything SDK error during fallback search" -ForegroundColor Red
-            # Clean up Everything SDK state
-            try { [Everything]::Everything_Reset() } catch { }
             return
         }
 
         if ($numResults -eq 0) {
             Write-Host "❌ No app matches input: $userInput (not found in Start Menu or Everything index)" -ForegroundColor Red
-            # Clean up Everything SDK state
-            try { [Everything]::Everything_Reset() } catch { }
             return
         }
 
@@ -392,9 +369,6 @@ public class Everything
                 $exeResults += $result
             }
         }
-
-        # Clean up Everything SDK state after retrieving results
-        try { [Everything]::Everything_Reset() } catch { }
 
         $exeResults = $exeResults | Sort-Object -Unique
         if ($exeResults.Count -eq 0) {
@@ -420,60 +394,21 @@ public class Everything
             $exeToLaunch = $exeResults[[int]$choice - 1]
         }
         Write-Host ("\n🚀 Launching: {0}" -f $exeToLaunch)
-        
-        # Check if this appears to be a CLI application that should run in a new terminal window
-        $exeName = [System.IO.Path]::GetFileNameWithoutExtension($exeToLaunch).ToLower()
-        $terminalApps = @('nvim', 'vim', 'nano', 'git', 'node', 'python', 'python3', 'pip', 'npm', 'yarn', 'cargo', 'rustc', 'go', 'java', 'javac', 'gcc', 'clang', 'make', 'cmake', 'msbuild', 'dotnet', 'pwsh', 'powershell', 'bash', 'zsh', 'fish', 'cmd')
-        $isCLIApp = $terminalApps -contains $exeName
-        
-        # For CLI apps, launch in a new terminal window
-        if ($isCLIApp) {
-            Write-Host "🔧 Detected CLI application. Launching in new terminal window..." -ForegroundColor Yellow
-            
-            try {
-                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-                $startInfo.FileName = "cmd.exe"
-                $startInfo.Arguments = "/c start `"$exeName`" `"$exeToLaunch`""
-                $startInfo.UseShellExecute = $false
-                $startInfo.CreateNoWindow = $true
-                $startInfo.RedirectStandardOutput = $true
-                $startInfo.RedirectStandardError = $true
-                $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-                $process = [System.Diagnostics.Process]::Start($startInfo)
-                $null = $process.WaitForExit(2000)
-                $process.Dispose()
-                Write-Host "🚀 Launched: $exeName in new terminal" -ForegroundColor Green
-            } catch {
-                Write-Host "❌ Failed to launch CLI app: $exeToLaunch" -ForegroundColor Red
-                Write-Host $_.Exception.Message -ForegroundColor DarkRed
-            }
-            return
-        }
-        
-        # For GUI applications, use detached method
         try {
-            # Use Windows API to launch process completely detached from console
+            # Use cmd /c start to completely detach the process
             $startInfo = New-Object System.Diagnostics.ProcessStartInfo
             $startInfo.FileName = "cmd.exe"
-            $startInfo.Arguments = "/c start `"`" /b `"$exeToLaunch`""
+            $startInfo.Arguments = "/c start `"`" `"$exeToLaunch`""
             $startInfo.UseShellExecute = $false
             $startInfo.CreateNoWindow = $true
             $startInfo.RedirectStandardOutput = $true
             $startInfo.RedirectStandardError = $true
-            $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
             $process = [System.Diagnostics.Process]::Start($startInfo)
-            $null = $process.WaitForExit(2000)  # Wait briefly for cmd to complete
-            $process.Dispose()
+            $null = $process.WaitForExit(1000)  # Suppress the True output
         } catch {
-            # Fallback: Use explorer.exe to launch the executable (most detached method)
+            # Fallback to original method
             try {
-                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-                $startInfo.FileName = "explorer.exe"
-                $startInfo.Arguments = "`"$exeToLaunch`""
-                $startInfo.UseShellExecute = $false
-                $startInfo.CreateNoWindow = $true
-                $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-                $null = [System.Diagnostics.Process]::Start($startInfo)
+                $null = Start-Process $exeToLaunch -WindowStyle Normal -PassThru
             } catch {
                 Write-Host "❌ Failed to launch: $exeToLaunch" -ForegroundColor Red
                 Write-Host $_.Exception.Message -ForegroundColor DarkRed
@@ -679,69 +614,21 @@ public class Win32WindowManager {
     }
     if (-not $broughtToFront) {
         Write-Host ("`n🚀 Launching: {0}" -f $appSelected.Name)
-        
-        # Check if this is a CLI application that should run in the current terminal
-        $appNameLower = $appSelected.Name.ToLower()
-        $targetPathLower = if ($appSelected.TargetPath) { [System.IO.Path]::GetFileNameWithoutExtension($appSelected.TargetPath).ToLower() } else { "" }
-        $terminalApps = @('nvim', 'vim', 'nano', 'git', 'node', 'python', 'python3', 'pip', 'npm', 'yarn', 'cargo', 'rustc', 'go', 'java', 'javac', 'gcc', 'clang', 'make', 'cmake', 'msbuild', 'dotnet', 'pwsh', 'powershell', 'bash', 'zsh', 'fish', 'cmd')
-        
-        $isCLIApp = $false
-        foreach ($termApp in $terminalApps) {
-            if ($appNameLower -like "*$termApp*" -or $targetPathLower -like "*$termApp*") {
-                $isCLIApp = $true
-                break
-            }
-        }
-        
-        # For CLI apps, launch using the target executable directly in a new terminal window
-        if ($isCLIApp -and $appSelected.TargetPath -and (Test-Path $appSelected.TargetPath -ErrorAction SilentlyContinue)) {
-            Write-Host "🔧 Detected CLI application. Launching in new terminal window..." -ForegroundColor Yellow
-            
-            # Launch CLI app in a new terminal window using cmd start
+        try {
+            # Launch .lnk file directly using Start-Process
+            $null = Start-Process -FilePath $appPath -WindowStyle Normal -PassThru
+        } catch {
+            # Fallback: Use cmd /c start with the .lnk file
             try {
                 $startInfo = New-Object System.Diagnostics.ProcessStartInfo
                 $startInfo.FileName = "cmd.exe"
-                $startInfo.Arguments = "/c start `"$($appSelected.Name)`" `"$($appSelected.TargetPath)`""
+                $startInfo.Arguments = "/c start `"`" `"$appPath`""
                 $startInfo.UseShellExecute = $false
                 $startInfo.CreateNoWindow = $true
                 $startInfo.RedirectStandardOutput = $true
                 $startInfo.RedirectStandardError = $true
-                $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
                 $process = [System.Diagnostics.Process]::Start($startInfo)
-                $null = $process.WaitForExit(2000)
-                $process.Dispose()
-                Write-Host "🚀 Launched: $($appSelected.Name) in new terminal" -ForegroundColor Green
-            } catch {
-                Write-Host "❌ Failed to launch CLI app: $($appSelected.TargetPath)" -ForegroundColor Red
-                Write-Host $_.Exception.Message -ForegroundColor DarkRed
-            }
-            return
-        }
-        
-        # For GUI applications, use detached method
-        try {
-            # Use Windows API to launch process completely detached from console
-            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-            $startInfo.FileName = "cmd.exe"
-            $startInfo.Arguments = "/c start `"`" /b `"$appPath`""
-            $startInfo.UseShellExecute = $false
-            $startInfo.CreateNoWindow = $true
-            $startInfo.RedirectStandardOutput = $true
-            $startInfo.RedirectStandardError = $true
-            $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-            $process = [System.Diagnostics.Process]::Start($startInfo)
-            $null = $process.WaitForExit(2000)  # Wait briefly for cmd to complete
-            $process.Dispose()
-        } catch {
-            # Fallback: Use explorer.exe to launch the shortcut (most detached method)
-            try {
-                $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-                $startInfo.FileName = "explorer.exe"
-                $startInfo.Arguments = "`"$appPath`""
-                $startInfo.UseShellExecute = $false
-                $startInfo.CreateNoWindow = $true
-                $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-                $null = [System.Diagnostics.Process]::Start($startInfo)
+                $null = $process.WaitForExit(1000)  # Suppress the True output
             } catch {
                 Write-Host "❌ Failed to launch: $appPath" -ForegroundColor Red
                 Write-Host $_.Exception.Message -ForegroundColor DarkRed
