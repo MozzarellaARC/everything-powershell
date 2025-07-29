@@ -339,4 +339,5 @@ function open {
 
     Set-Alias o open
     Set-Alias od open-dir
+    Set-Alias oget Get-Apps
     Set-Alias oclear Clear-AppCache
