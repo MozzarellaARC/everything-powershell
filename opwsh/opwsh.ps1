@@ -192,7 +192,11 @@ public class Win32WindowManager {
     
     return $false
 }
-
+# Here is start the main script functionality
+# Here is start the main script functionality
+# Here is start the main script functionality
+# Here is start the main script functionality
+# Here is start the main script functionality
 function open-dir {
     param(
         [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
