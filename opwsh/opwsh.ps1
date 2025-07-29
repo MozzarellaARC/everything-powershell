@@ -23,6 +23,8 @@ function Get-Apps {
         return $Script:CachedApps
     }
     
+    Write-Host "🔍 Scanning Start Menu applications..." -ForegroundColor Cyan
+    
     $paths = @(
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
         "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
@@ -33,6 +35,7 @@ function Get-Apps {
     
     foreach ($path in $paths) {
         if (Test-Path $path) {
+            Write-Host "  📂 Processing: $path" -ForegroundColor Gray
             $shortcuts = Get-ChildItem -Path $path -Recurse -Filter *.lnk -ErrorAction SilentlyContinue
             foreach ($shortcut in $shortcuts) {
                 $targetPath = Get-ShortcutTarget -ShortcutPath $shortcut.FullName
@@ -54,13 +57,15 @@ function Get-Apps {
     }
     
     $Script:CachedApps = $apps | Sort-Object Name
+    Write-Host "✅ Found $($Script:CachedApps.Count) applications" -ForegroundColor Green
     return $Script:CachedApps
 }
 
 # Clear cache
 function Clear-AppCache {
+    Write-Host "🧹 Clearing application cache..." -ForegroundColor Cyan
     $Script:CachedApps = $null
-    Write-Host "Cache cleared." -ForegroundColor Green
+    Write-Host "✅ Cache cleared." -ForegroundColor Green
 }
 
 # Load Everything SDK
@@ -100,6 +105,7 @@ function Search-EverythingEXE {
     Start-EverythingSDK
     
     try {
+        Write-Host "  🔍 Querying Everything database..." -ForegroundColor Gray
         [Everything]::Everything_SetSearchW("$Query *.exe")
         [Everything]::Everything_QueryW($true)
         $numResults = [Everything]::Everything_GetNumResults()
@@ -115,8 +121,10 @@ function Search-EverythingEXE {
             }
         }
         
+        Write-Host "  ✅ Found $($results.Count) executable(s)" -ForegroundColor Gray
         return $results | Sort-Object -Unique
     } catch {
+        Write-Host "  ❌ Everything search failed" -ForegroundColor Red
         return @()
     }
 }
@@ -209,6 +217,7 @@ function open-dir {
         return
     }
     
+    Write-Host "🔍 Searching for executables: $userInput" -ForegroundColor Cyan
     $exeResults = Search-EverythingEXE -Query $userInput
     
     if ($exeResults.Count -eq 0) {
@@ -235,6 +244,7 @@ function open-dir {
     }
     
     $exeDir = Split-Path $exeToOpen -Parent
+    Write-Host "📂 Opening directory: $exeDir" -ForegroundColor Green
     Start-Process "explorer.exe" -ArgumentList "`"$exeDir`""
 }
 
@@ -266,14 +276,17 @@ function open {
     $userInputLower = $userInput.ToLower()
     if ($appAliases.ContainsKey($userInputLower)) {
         $searchInput = $appAliases[$userInputLower]
+        Write-Host "📝 Using alias: '$userInput' → '$searchInput'" -ForegroundColor Gray
     }
     
     # Get Start Menu apps
+    Write-Host "🔍 Searching for applications: $searchInput" -ForegroundColor Cyan
     $apps = Get-Apps
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
     
     # If no Start Menu matches, fallback to Everything SDK
     if ($appMatches.Count -eq 0) {
+        Write-Host "⚠️  No Start Menu matches found, searching executables..." -ForegroundColor Yellow
         $exeResults = Search-EverythingEXE -Query $userInput
         
         if ($exeResults.Count -eq 0) {
@@ -299,6 +312,7 @@ function open {
         
         # Launch executable directly
         try {
+            Write-Host "🚀 Launching: $exeToLaunch" -ForegroundColor Green
             Start-Process -FilePath $exeToLaunch -WindowStyle Normal | Out-Null
         } catch {
             Write-Host "❌ Failed to launch: $exeToLaunch" -ForegroundColor Red
@@ -329,12 +343,15 @@ function open {
     }
     
     # Try to bring existing window to foreground
+    Write-Host "🔄 Checking if application is already running..." -ForegroundColor Gray
     if (Invoke-BringToForeground -AppName $appSelected.Name -TargetPath $appSelected.TargetPath) {
+        Write-Host "✅ Brought existing window to foreground: $($appSelected.Name)" -ForegroundColor Green
         return
     }
     
     # Launch the app using shortcut
     try {
+        Write-Host "🚀 Launching: $($appSelected.Name)" -ForegroundColor Green
         Start-Process -FilePath $appSelected.ShortcutPath -WindowStyle Normal | Out-Null
     } catch {
         Write-Host "❌ Failed to launch: $($appSelected.Name)" -ForegroundColor Red
