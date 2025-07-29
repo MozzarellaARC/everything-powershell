@@ -269,7 +269,7 @@ function open {
     }
     
     # Get Start Menu apps
-    $apps = Get-App
+    $apps = Get-Apps
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
     
     # If no Start Menu matches, fallback to Everything SDK
