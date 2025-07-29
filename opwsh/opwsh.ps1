@@ -18,7 +18,7 @@ function Get-ShortcutTarget {
 }
 
 # Parse Start Menu applications
-function open-pwsh-get {
+function Get-Apps {
     if ($Script:CachedApps) {
         return $Script:CachedApps
     }
@@ -58,8 +58,9 @@ function open-pwsh-get {
 }
 
 # Clear cache
-function open-pwsh-clear {
+function Clear-AppCache {
     $Script:CachedApps = $null
+    Write-Host "Cache cleared." -ForegroundColor Green
 }
 
 # Load Everything SDK
@@ -264,7 +265,7 @@ function open {
     }
     
     # Get Start Menu apps
-    $apps = open-pwsh-get
+    $apps = Get-App
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
     
     # If no Start Menu matches, fallback to Everything SDK
@@ -338,4 +339,4 @@ function open {
 
     Set-Alias o open
     Set-Alias od open-dir
-    Set-Alias oclear open-pwsh-clear
+    Set-Alias oclear Clear-AppCache
