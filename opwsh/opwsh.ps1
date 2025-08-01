@@ -19,7 +19,9 @@ function Get-ShortcutTarget {
 
 # Parse Start Menu applications
 function Get-Apps {
-    if ($Script:CachedApps) {
+    # Check if cache exists and is not empty
+    if ($Script:CachedApps -and $Script:CachedApps.Count -gt 0) {
+        Write-Host "📋 Using cached applications ($($Script:CachedApps.Count) apps)" -ForegroundColor Green
         return $Script:CachedApps
     }
     
@@ -57,7 +59,7 @@ function Get-Apps {
     }
     
     $Script:CachedApps = $apps | Sort-Object Name
-    Write-Host "✅ Found $($Script:CachedApps.Count) applications" -ForegroundColor Green
+    Write-Host "✅ Found $($Script:CachedApps.Count) applications (cached for future use)" -ForegroundColor Green
     return $Script:CachedApps
 }
 
