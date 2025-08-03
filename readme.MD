@@ -22,20 +22,17 @@ The code parse strings from data that is created when you open up an application
 *Before installing it might not work on Windows 10 and Powershell bellow version 7*
 
 ### *Installation:*
-***requires: Powershell 7 and [Everything by VoidTools](https://www.voidtools.com/) version 1.4x***
+***Requires: Powershell 7 and optionally [Everything by VoidTools](https://www.voidtools.com/) version 1.4x***
 
 
-1. open Powershell 7
-2. type this comand in the interface ```$PROFILE```
-3. check if such directory is created ```C:\Users\YourUserName\Documents\PowerShell```
-4. (*optional*) if not, you can create new folder and name it ```PowerShell```
-5. type this in your Powershell 7 interface ```cd C:\Users\YourUserName\Documents\PowerShell```
-6. type this in your Powershell 7 interface ```
-git clone https://github.com/MozzarellaARC/the-all-powershell.git```
-7. (*optional*) or if you don't have git installed you can clone this repo
-8. type this in your PowerShell 7 ```. $PROFILE``` (don't *forget the dots*)
-
-***CAVEATS: Everything app must run in the background for a more precision search querries !!!***
+Windows 11:
+right click open in terminal on your PowerShell folder in documents if not exists make one then run this into your terminal/powershell
+```
+git clone https://github.com/MozzarellaARC/everything-powershell.git .
+```
+```
+. $PROFILE
+```
 
 ### *List of command:*
 
