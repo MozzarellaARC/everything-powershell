@@ -28,7 +28,8 @@ function imageto {
 		[string]$Path = '.',
 
 		[switch]$Recurse,
-		[switch]$Force
+		[switch]$Force,
+		[switch]$NoProgress
 	)
 
 	$origFormatInput = $Format
@@ -48,6 +49,7 @@ function imageto {
 	$files = Get-ChildItem -LiteralPath $resolvedPath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
 		Where-Object { $_.Extension -match '\.(jpg|jpeg|png|webp|gif|bmp|tif|tiff|avif|heic)$' }
 	if (-not $files) { Write-Warning 'No images found.'; return }
+	$total = $files.Count
 
 	$magick = Get-Command magick -ErrorAction SilentlyContinue
 	$useMagick = $magick -ne $null
@@ -76,8 +78,14 @@ function imageto {
 	$countUnsupported = 0
 	$errors = 0
 
-	foreach ($file in $files) {
+	for ($index = 0; $index -lt $files.Count; $index++) {
+		$file = $files[$index]
 		$countTotal++
+		if (-not $NoProgress) {
+			$percent = [int](($index / [double]$total) * 100)
+			$stat = "Processing $($index+1)/$total : $($file.Name)"
+			Write-Progress -Activity 'Converting images' -Status $stat -PercentComplete $percent
+		}
 		$currentExt = $file.Extension.TrimStart('.')
 		if ($currentExt.ToLower() -eq $Format.Trim('.')) {
 			$countSkipped++
