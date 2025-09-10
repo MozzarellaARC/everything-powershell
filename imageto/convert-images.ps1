@@ -23,6 +23,10 @@ function imageto {
 		[ValidateNotNullOrEmpty()]
 		[string]$Format,
 
+		# Optional starting directory (defaults to current directory)
+		[Parameter(Position=1)]
+		[string]$Path = '.',
+
 		[switch]$Recurse,
 		[switch]$Force
 	)
@@ -36,20 +40,31 @@ function imageto {
 		Write-Error "Unsupported target format '$origFormatInput'. Supported: $($validTargets -join ', ')"; return
 	}
 
-	$searchPatterns = @('*.jpg','*.jpeg','*.png','*.webp','*.gif','*.bmp','*.tif','*.tiff','*.avif','*.heic')
-	$gciParams = @{ File = $true; Include = $searchPatterns }
-	if ($Recurse) { $gciParams.Recurse = $true }
-	$files = Get-ChildItem @gciParams | Where-Object { -not $_.PSIsContainer }
+	# Resolve and validate path
+	try { $resolvedPath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath } catch { Write-Error "Path not found: $Path"; return }
+
+	# NOTE: -Include without -Recurse can silently return nothing unless the -Path has a wildcard.
+	# To avoid that pitfall we enumerate then filter by extension.
+	$files = Get-ChildItem -LiteralPath $resolvedPath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
+		Where-Object { $_.Extension -match '\.(jpg|jpeg|png|webp|gif|bmp|tif|tiff|avif|heic)$' }
 	if (-not $files) { Write-Warning 'No images found.'; return }
 
 	$magick = Get-Command magick -ErrorAction SilentlyContinue
 	$useMagick = $magick -ne $null
+	$basicDecodable = 'jpg','jpeg','png','gif','bmp','tif','tiff'
 	if (-not $useMagick) {
-		# Determine whether .NET fallback will suffice
-		$unsupported = $files | Where-Object { $_.Extension -match '\.(webp|avif|heic)$' }
-		if ($unsupported -and ($Format -match 'webp|avif|heic')) {
-			Write-Warning 'Advanced formats requested but magick.exe not found. Install ImageMagick for full support.'
+		# If target itself is an advanced format we can't proceed
+		if ($Format -notin $basicDecodable) {
+			Write-Warning "Target format '$Format' requires ImageMagick (magick.exe). Install ImageMagick for full support."
 			return
+		}
+		# Filter out source images we can't decode with System.Drawing
+		$unsupportedSources = $files | Where-Object { ($_.Extension.TrimStart('.').ToLower()) -notin $basicDecodable }
+		if ($unsupportedSources) {
+			$preview = ($unsupportedSources | Select-Object -First 5 -ExpandProperty Name) -join ', '
+			Write-Warning "Skipping unsupported source formats without ImageMagick: $preview" 
+			$files = $files | Where-Object { ($_.Extension.TrimStart('.').ToLower()) -in $basicDecodable }
+			if (-not $files) { Write-Warning 'No convertible images with current fallback.'; return }
 		}
 		# Load System.Drawing for basic formats
 		Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue | Out-Null
@@ -58,6 +73,7 @@ function imageto {
 	$countTotal = 0
 	$countConverted = 0
 	$countSkipped = 0
+	$countUnsupported = 0
 	$errors = 0
 
 	foreach ($file in $files) {
@@ -106,7 +122,8 @@ function imageto {
 		}
 	}
 
-	Write-Host "Total: $countTotal | Converted: $countConverted | Skipped: $countSkipped | Errors: $errors" -ForegroundColor Cyan
+	Write-Host "Total: $countTotal | Converted: $countConverted | Skipped (already target): $countSkipped | Errors: $errors" -ForegroundColor Cyan
+	if (-not $useMagick) { Write-Host 'Tip: Install ImageMagick (winget install ImageMagick.ImageMagick) for webp/avif/heic support.' -ForegroundColor DarkCyan }
 }
 
 # If script is executed directly (not dot-sourced) allow quick one-off usage: .\convert-images.ps1 png
