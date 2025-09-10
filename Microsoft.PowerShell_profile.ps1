@@ -6,3 +6,6 @@
 
 # Load ImageTools functions
 . "$PSScriptRoot\imageto\convert-images.ps1"
+
+# Auto cd to the foreground Windows Explorer folder
+. "$PSScriptRoot\utils\auto_cd_quake_mode.ps1"
