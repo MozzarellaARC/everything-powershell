@@ -70,38 +70,76 @@ function Clear-AppCache {
     Write-Host "✅ Cache cleared." -ForegroundColor Green
 }
 
-# Deprecated Everything SDK removed.
-# TODO: Implement a new fast executable/file search backend.
-# Desired replacement characteristics:
-#   - Cross-volume enumeration with caching (avoid full recursive scan every call)
-#   - Supports patterns (wildcards) and fuzzy substring
-#   - Returns full paths for executables prioritizing likely launch targets
-#   - Pure PowerShell or lightweight external binary (fd, rg, custom indexer)
+# fd integration (replacement for deprecated Everything SDK)
+function Test-FdAvailable { return [bool](Get-Command fd -ErrorAction SilentlyContinue) }
 
-function Search-ExecutablesPlaceholder {
-    param([string]$Query)
-    <#
-    TODO: Replace this stub with real search logic.
-    Temporary behavior: naive recursive search limited to a small set of root folders
-    for demonstration. This is intentionally conservative to avoid performance issues.
-    #>
+function Search-ExecutablesFd {
+    param(
+        [Parameter(Mandatory)][string]$Query,
+        [int]$Limit = 50
+    )
+    if (-not (Test-FdAvailable)) { return @() }
     if (-not $Query) { return @() }
 
+    # Build fd args:
+    # -t f : files only
+    # -e exe : extension exe
+    # Case-insensitive by default on Windows; use smart case behavior.
+    $args = @('-t','f','-e','exe','--max-results',$Limit,'--color','never')
+
+    # Standard program search roots (can be expanded later or made configurable)
     $roots = @(
-        "$env:ProgramFiles",
-        "$env:ProgramFiles(x86)",
-        "$env:LOCALAPPDATA"
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:LOCALAPPDATA,
+        "$env:ProgramData"
     ) | Where-Object { $_ -and (Test-Path $_) }
 
+    foreach ($r in $roots) { $args += @('--search-path', (Resolve-Path $r).Path) }
+
+    # Append the pattern (fd treats this as a regex / fuzzy style literal)
+    $args += $Query
+    try {
+        $output = fd @args 2>$null
+        $filtered = $output | Where-Object { $_ -match '\\.exe$' }
+        return @($filtered)
+    } catch { return @() }
+}
+
+function Search-ExecutablesFallback {
+    param([string]$Query,[int]$Limit=30)
+    if (-not $Query) { return @() }
+    $roots = @(
+        "$env:ProgramFiles",
+        "${env:ProgramFiles(x86)}",
+        "$env:LOCALAPPDATA"
+    ) | Where-Object { $_ -and (Test-Path $_) }
     $pattern = "*${Query}*.exe"
-    $results = @()
+    $results = New-Object System.Collections.Generic.List[string]
     foreach ($root in $roots) {
         try {
-            $results += Get-ChildItem -Path $root -Recurse -Filter $pattern -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-            if ($results.Count -gt 50) { break } # guardrail to prevent huge scans
+            Get-ChildItem -Path $root -Recurse -Filter $pattern -File -ErrorAction SilentlyContinue |
+                ForEach-Object { 
+                    if ($results.Count -ge $Limit) { break }
+                    $results.Add($_.FullName) | Out-Null
+                }
         } catch { }
+        if ($results.Count -ge $Limit) { break }
     }
-    return ($results | Sort-Object -Unique)
+    return @($results.ToArray() | Sort-Object -Unique | Select-Object -First $Limit)
+}
+
+function Search-Executables {
+    param([string]$Query,[int]$Limit=50)
+    if (Test-FdAvailable) {
+        $fd = Search-ExecutablesFd -Query $Query -Limit $Limit
+        if ($fd -and ($fd | Measure-Object).Count -gt 0) { return @($fd) }
+        Write-Host "  ℹ️  'fd' found no matches in standard program directories. Falling back to slower scan." -ForegroundColor DarkYellow
+    }
+    if (-not (Test-FdAvailable)) {
+        Write-Host "  ⚙️  Falling back to slow PowerShell search (install 'fd' for faster results)" -ForegroundColor DarkYellow
+    }
+    return (Search-ExecutablesFallback -Query $Query -Limit $Limit)
 }
 
 # Window management for bringing apps to foreground
@@ -192,26 +230,27 @@ function open-dir {
         return
     }
     
-    Write-Host "🔍 Searching for executables (placeholder backend): $userInput" -ForegroundColor Cyan
-    $exeResults = Search-ExecutablesPlaceholder -Query $userInput
+    Write-Host "🔍 Searching for executables (fd fallback): $userInput" -ForegroundColor Cyan
+    $exeResults = @(Search-Executables -Query $userInput)
     
-    if ($exeResults.Count -eq 0) {
+    if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) {
         Write-Host "❌ No .exe files found for: $userInput" -ForegroundColor Red
         return
     }
     
-    if ($exeResults.Count -eq 1) {
+    if (($exeResults | Measure-Object).Count -eq 1) {
         $exeToOpen = $exeResults[0]
     } else {
         Write-Host "`nAvailable executables:"
-        for ($i = 0; $i -lt $exeResults.Count; $i++) {
+        for ($i = 0; $i -lt ($exeResults | Measure-Object).Count; $i++) {
             Write-Host ("  [{0}] {1}" -f ($i + 1), $exeResults[$i])
         }
-        $choice = Read-Host "Enter number (1-$($exeResults.Count)) or 'n' to cancel"
+        $choice = Read-Host "Enter number (1-$((($exeResults)|Measure-Object).Count)) or 'n' to cancel"
         if ($choice -match '^(n|no)$') {
             return
         }
-        if ($choice -notmatch '^[0-9]+$' -or [int]$choice -lt 1 -or [int]$choice -gt $exeResults.Count) {
+        $total = (($exeResults)|Measure-Object).Count
+        if ($choice -notmatch '^[0-9]+$' -or [int]$choice -lt 1 -or [int]$choice -gt $total) {
             Write-Host "❌ Invalid selection." -ForegroundColor Red
             return
         }
@@ -261,24 +300,25 @@ function open {
     
     # If no Start Menu matches, fallback to placeholder executable search
     if ($appMatches.Count -eq 0) {
-        Write-Host "⚠️  No Start Menu matches found, searching executables..." -ForegroundColor Yellow
-    $exeResults = Search-ExecutablesPlaceholder -Query $userInput
+        Write-Host "⚠️  No Start Menu matches found, searching executables (fd)..." -ForegroundColor Yellow
+    $exeResults = @(Search-Executables -Query $userInput)
         
-        if ($exeResults.Count -eq 0) {
+        if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) {
             Write-Host "❌ No apps found for: $userInput" -ForegroundColor Red
             return
         }
         
-        if ($exeResults.Count -eq 1) {
+        if (($exeResults | Measure-Object).Count -eq 1) {
             $exeToLaunch = $exeResults[0]
         } else {
             Write-Host "`nAvailable executables:"
-            for ($i = 0; $i -lt $exeResults.Count; $i++) {
+            for ($i = 0; $i -lt (($exeResults)|Measure-Object).Count; $i++) {
                 Write-Host ("  [{0}] {1}" -f ($i + 1), $exeResults[$i])
             }
-            $choice = Read-Host "Enter number (1-$($exeResults.Count)) or 'n' to cancel"
+            $choice = Read-Host "Enter number (1-$((($exeResults)|Measure-Object).Count)) or 'n' to cancel"
             if ($choice -match '^(n|no)$') { return }
-            if ($choice -notmatch '^[0-9]+$' -or [int]$choice -lt 1 -or [int]$choice -gt $exeResults.Count) {
+            $total = (($exeResults)|Measure-Object).Count
+            if ($choice -notmatch '^[0-9]+$' -or [int]$choice -lt 1 -or [int]$choice -gt $total) {
                 Write-Host "❌ Invalid selection." -ForegroundColor Red
                 return
             }

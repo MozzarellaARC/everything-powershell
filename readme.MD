@@ -6,9 +6,9 @@ Deprecated Notice:
 The previous integration with the Everything SDK has been removed (SDK deprecated in this project context). A new pluggable fast search backend will be introduced. See TODO section below.
 
 ## *Functions overview:*
-- Application openner through Powershell using `open yourapplicationnamehere`
-- Appication directory openner through Powershell using `open-dir yourfilenamehere`
-- (temporarily disabled) Full filesystem instant search. `es` now only reports a placeholder until a new backend is added.
+- Application opener via `open <appname>` (Start Menu + fd fallback)
+- Application directory opener via `open-dir <appname|pattern>`
+- Filesystem search via `es <pattern>` (uses `fd` if available, otherwise slow PowerShell fallback)
 
 ## *How does it work?*
 The code parse strings from data that is created when you open up an application, so if you have an application that is not yet open the first time or an app that is being used without installation this script may not work properly.
@@ -44,7 +44,7 @@ oclear  -Clear cache
 
 (deprecated)oref -Refresh cache, use this if you have newly added apps(deprecated)
 
-es      -Placeholder (previously Everything-backed search). Will be replaced by a new search provider.
+es      -Filesystem search (fd if present; falls back to slow PowerShell recursion)
 ```
 
 ### *Command Aliasses:*
@@ -56,15 +56,16 @@ oget as open-pwsh-get
 oclear as open-pwsh-clear
 (deprecated) oref as open-pwsh-refresh
 
-### TODO (Planned Search Backend Replacement)
+### Search Implementation
 
-- Evaluate alternative search providers:
-	- Windows Search (SystemIndex) via OLE DB / COM
-	- External tools (fd, ripgrep) with caching layer
-	- Custom lightweight indexer (USN Journal + persisted metadata)
-	- Optional: simple PowerShell recursive fallback (current interim solution)
-- Implement provider abstraction: `Search-Provider -Query <string> -Type Files|Apps`.
-- Reinstate `es` to call the new provider with filtering (extensions / path scope / fuzzy matching).
+`fd` is used when available (https://github.com/sharkdp/fd). Install it and ensure it is in PATH for best performance.
 
-Contributions or suggestions welcome.
+Fallback behavior (when `fd` is missing):
+- `open` / `open-dir` perform a limited recursive scan of common program directories.
+- `es` performs a recursive search starting at the current directory (or specified paths) with basic wildcard matching.
+
+Optional future enhancements (PRs welcome):
+- Provider abstraction to plug in Windows Search / ripgrep / custom indexer
+- Result ranking and fuzzy scoring
+- Caching layer for frequent queries
 ```
