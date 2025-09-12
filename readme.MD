@@ -1,71 +1,117 @@
 
-## Everything Powershell (epwsh)
-A PowerShell 7 configuration to navigate and launch applications quickly from Windows 11 via the terminal. (Name retained; original dependency on Everything SDK has been removed.)
+## Everything PowerShell (epwsh)
 
-Deprecated Notice:
-The previous integration with the Everything SDK has been removed (SDK deprecated in this project context). A new pluggable fast search backend will be introduced. See TODO section below.
+Minimal PowerShell 7 utilities to quickly launch applications, open their install directories, and search the filesystem from the terminal on Windows 11. Originally backed by the (now removed) Everything SDK; now uses the blazingly fast [`fd`](https://github.com/sharkdp/fd) when available, with a safe PowerShell fallback.
 
-## *Functions overview:*
-- Application opener via `open <appname>` (Start Menu + fd fallback)
-- Application directory opener via `open-dir <appname|pattern>`
-- Filesystem search via `es <pattern>` (uses `fd` if available, otherwise slow PowerShell fallback)
+### Deprecation Note
+The embedded Everything SDK integration was removed. The project keeps its name for continuity. Search now routes through `fd` (recommended) or a slower recursive fallback.
 
-## *How does it work?*
-The code parse strings from data that is created when you open up an application, so if you have an application that is not yet open the first time or an app that is being used without installation this script may not work properly.
+## Features
+* `open <name>` – Launch an application (Start Menu shortcut match first, then executable discovery).
+* `open-dir <name>` – Open the install folder of an executable.
+* `es <pattern>` – General file/dir search with extension filtering, scope paths, and limits.
+* Caching of Start Menu shortcuts for fast repeated launches.
+* Graceful fallback when external tools are unavailable.
 
-- suitable for user that hates finding app through icons
-- very save and optimized, uses cache method to save memory for consecutive run
-- easy syntax for example to open Google Chrome you can just type:
-```open chrome```
+## How It Works (High Level)
+1. Start Menu Parsing: Recursively finds `.lnk` shortcuts under ProgramData and user AppData; caches results.
+2. Launch Workflow (`open`):
+	* Match shortcut names first (case-insensitive substring).
+	* If none: call executable search.
+3. Executable Search Order:
+	1. `fd` restricted to common install roots (Program Files, Program Files (x86), LocalAppData, ProgramData).
+	2. If zero results (or fd absent): limited PowerShell recursive scan with a guard on max results.
+4. `es` leverages `fd` (files, dirs, extensions, search paths). Falls back to PowerShell enumeration otherwise.
 
+## Requirements
+* PowerShell 7+
+* Windows 11 (most functions likely fine on Windows 10, but not tested)
+* Optional: `fd` in `PATH` for fast searching (recommended)
 
-*Before installing it might not work on Windows 10 and PowerShell below version 7*
-
-### *Installation:*
-***Requires: PowerShell 7. Optional historical dependency on Everything removed.***
-
-
-Windows 11:
-right click open in terminal on your PowerShell folder in documents if not exists make one then run this into your terminal/powershell
-```
+## Installation
+Open a PowerShell terminal inside (or create) your `Documents\PowerShell` folder:
+```pwsh
 git clone https://github.com/MozzarellaARC/everything-powershell.git .
-```
-```
 . $PROFILE
 ```
 
-### *List of command:*
+> If you already have a profile, ensure it dot-sources or imports these scripts (or copy the functions you need).
 
+### Install fd (Recommended)
+Simplest (scoop):
+```pwsh
+scoop install fd
 ```
-o       -Open application
-od      -Open the directory of entered args
-oget    -Initialize directory cache (not needed to do this manually, debugging purposes only)
-oclear  -Clear cache
+Or via Cargo:
+```pwsh
+cargo install fd-find
+```
+Binary releases: https://github.com/sharkdp/fd/releases
 
-(deprecated)oref -Refresh cache, use this if you have newly added apps(deprecated)
-
-es      -Filesystem search (fd if present; falls back to slow PowerShell recursion)
+Verify:
+```pwsh
+fd --version
 ```
 
-### *Command Aliasses:*
-
+## Usage Examples
+Launch Chrome (Start Menu match):
+```pwsh
+open chrome
 ```
-0 as open
-od as open-dir
-oget as open-pwsh-get
-oclear as open-pwsh-clear
-(deprecated) oref as open-pwsh-refresh
-
-### Search Implementation
-
-`fd` is used when available (https://github.com/sharkdp/fd). Install it and ensure it is in PATH for best performance.
-
-Fallback behavior (when `fd` is missing):
-- `open` / `open-dir` perform a limited recursive scan of common program directories.
-- `es` performs a recursive search starting at the current directory (or specified paths) with basic wildcard matching.
-
-Optional future enhancements (PRs welcome):
-- Provider abstraction to plug in Windows Search / ripgrep / custom indexer
-- Result ranking and fuzzy scoring
-- Caching layer for frequent queries
+Launch VS Code using alias:
+```pwsh
+open vsc
 ```
+Open install directory for anything matching “unity”:
+```pwsh
+open-dir unity
+```
+Search for PowerShell scripts anywhere under current directory (fd path scoping optional):
+```pwsh
+es -ext ps1 profile
+```
+Directories only under specific roots:
+```pwsh
+es -dirs -path C:\Projects -path D:\Work build
+```
+Files with multiple extensions:
+```pwsh
+es -files -ext ps1 -ext psd1 module
+```
+
+## Commands
+```
+open / o       Launch application
+open-dir / od  Open directory of selected executable
+oget           (Re)populate Start Menu cache (normally automatic)
+oclear         Clear cached Start Menu entries
+es             File / directory search (fd or fallback)
+```
+
+Deprecated (kept for reference, may be removed later):
+```
+oref           Old manual refresh (not needed)
+```
+
+## Aliases
+```
+o      -> open
+od     -> open-dir
+oget   -> Get-Apps
+oclear -> Clear-AppCache
+```
+
+## Search Behavior Details
+Executable discovery roots with `fd` (in order):
+1. Program Files
+2. Program Files (x86)
+3. LocalAppData
+4. ProgramData
+
+Fallback roots (PowerShell mode): Program Files, Program Files (x86), LocalAppData.
+
+## License
+See `LICENSE` file.
+
+---
+Found something off or have a feature request? Open an issue or drop a PR. ❤️
