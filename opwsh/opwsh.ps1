@@ -70,65 +70,38 @@ function Clear-AppCache {
     Write-Host "✅ Cache cleared." -ForegroundColor Green
 }
 
-# Load Everything SDK
-function Start-EverythingSDK {
-    if (-not ([System.Management.Automation.PSTypeName]'Everything').Type) {
-        $scriptDir = $PSScriptRoot
-        if (-not $scriptDir) { $scriptDir = Split-Path $PSCommandPath }
-        $dllPath = Resolve-Path (Join-Path $scriptDir "..\epwsh\Everything-SDK\dll\Everything64.dll")
-        
-        Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
+# Deprecated Everything SDK removed.
+# TODO: Implement a new fast executable/file search backend.
+# Desired replacement characteristics:
+#   - Cross-volume enumeration with caching (avoid full recursive scan every call)
+#   - Supports patterns (wildcards) and fuzzy substring
+#   - Returns full paths for executables prioritizing likely launch targets
+#   - Pure PowerShell or lightweight external binary (fd, rg, custom indexer)
 
-public class Everything
-{
-    [DllImport(@"$($dllPath.Path)", CharSet = CharSet.Unicode)]
-    public static extern void Everything_SetSearchW(string search);
-
-    [DllImport(@"$($dllPath.Path)")]
-    public static extern void Everything_QueryW(bool bWait);
-
-    [DllImport(@"$($dllPath.Path)")]
-    public static extern int Everything_GetNumResults();
-
-    [DllImport(@"$($dllPath.Path)", CharSet = CharSet.Unicode)]
-    public static extern int Everything_GetResultFullPathNameW(int nIndex, System.Text.StringBuilder lpString, int nMaxCount);
-}
-"@
-    }
-}
-
-# Search for executables using Everything SDK
-function Search-EverythingEXE {
+function Search-ExecutablesPlaceholder {
     param([string]$Query)
-    
-    Start-EverythingSDK
-    
-    try {
-        Write-Host "  🔍 Querying Everything database..." -ForegroundColor Gray
-        [Everything]::Everything_SetSearchW("$Query *.exe")
-        [Everything]::Everything_QueryW($true)
-        $numResults = [Everything]::Everything_GetNumResults()
-        
-        $results = @()
-        for ($i = 0; $i -lt $numResults; $i++) {
-            $sb = New-Object System.Text.StringBuilder 1024
-            $null = [Everything]::Everything_GetResultFullPathNameW($i, $sb, $sb.Capacity)
-            $result = $sb.ToString()
-            
-            if ($result -match '\.exe$' -and $result -notmatch '\$Recycle\.Bin') {
-                $results += $result
-            }
-        }
-        
-        Write-Host "  ✅ Found $($results.Count) executable(s)" -ForegroundColor Gray
-        return $results | Sort-Object -Unique
-    } catch {
-        Write-Host "  ❌ Everything search failed" -ForegroundColor Red
-        return @()
+    <#
+    TODO: Replace this stub with real search logic.
+    Temporary behavior: naive recursive search limited to a small set of root folders
+    for demonstration. This is intentionally conservative to avoid performance issues.
+    #>
+    if (-not $Query) { return @() }
+
+    $roots = @(
+        "$env:ProgramFiles",
+        "$env:ProgramFiles(x86)",
+        "$env:LOCALAPPDATA"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    $pattern = "*${Query}*.exe"
+    $results = @()
+    foreach ($root in $roots) {
+        try {
+            $results += Get-ChildItem -Path $root -Recurse -Filter $pattern -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            if ($results.Count -gt 50) { break } # guardrail to prevent huge scans
+        } catch { }
     }
+    return ($results | Sort-Object -Unique)
 }
 
 # Window management for bringing apps to foreground
@@ -219,8 +192,8 @@ function open-dir {
         return
     }
     
-    Write-Host "🔍 Searching for executables: $userInput" -ForegroundColor Cyan
-    $exeResults = Search-EverythingEXE -Query $userInput
+    Write-Host "🔍 Searching for executables (placeholder backend): $userInput" -ForegroundColor Cyan
+    $exeResults = Search-ExecutablesPlaceholder -Query $userInput
     
     if ($exeResults.Count -eq 0) {
         Write-Host "❌ No .exe files found for: $userInput" -ForegroundColor Red
@@ -286,10 +259,10 @@ function open {
     $apps = Get-Apps
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
     
-    # If no Start Menu matches, fallback to Everything SDK
+    # If no Start Menu matches, fallback to placeholder executable search
     if ($appMatches.Count -eq 0) {
         Write-Host "⚠️  No Start Menu matches found, searching executables..." -ForegroundColor Yellow
-        $exeResults = Search-EverythingEXE -Query $userInput
+    $exeResults = Search-ExecutablesPlaceholder -Query $userInput
         
         if ($exeResults.Count -eq 0) {
             Write-Host "❌ No apps found for: $userInput" -ForegroundColor Red
