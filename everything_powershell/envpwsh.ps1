@@ -13,7 +13,8 @@ function envs {
 
         [switch]$Append,
         [switch]$Refresh,
-        [switch]$Set
+        [switch]$Set,
+        [Alias('h','?')][switch]$Help
     )
 
     # New capabilities:
@@ -42,7 +43,44 @@ function envs {
         }
     }
 
-    # Detect single scope usage BEFORE default Scope parameter masking it.
+        # Help requested -> print and exit early
+        if ($Help) {
+                @'
+envs - Environment variable helper
+
+USAGE:
+    envs <Var> [Scope]                 Get variable at scope (default Scope=Process)
+    envs <Scope>                       List all variables for that scope (Process|User|Machine)
+    envs                               List all variables for all scopes
+
+    envs <Var> <Scope> <Value>         Set variable
+    envs <Var> <Scope> <Value> -Append Append literal value to existing variable (semicolon separator)
+    envs <Var> <Scope> <Value> -Set    Set variable then append %Var% token to PATH at same scope
+
+SWITCHES:
+    -Append     Append provided Value to existing variable (adds ';' if needed)
+    -Set        Set variable and add %Var% to PATH (if not already there)
+    -Refresh    After modifying User/Machine, rebuild process PATH (Machine;User) and load changed var
+    -Help/-?    Show this help
+
+EXAMPLES:
+    envs Path User                     Get user PATH
+    envs User                          List all user variables
+    envs                               List all variables (Process, User, Machine)
+    envs TOOLS_HOME User 'C:\Tools' -Set -Refresh
+    envs Path User 'C:\ExtraBin' -Append -Refresh
+    envs MY_TEMP Process '123'         Set process-only variable
+
+NOTES:
+    - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
+    - Append expects directories (for PATH) not executables.
+    - -Refresh only needed for persistent scopes (User/Machine) to update current session.
+    - Listing returns objects; format/pipeline as desired.
+'@ | Write-Host
+                return
+        }
+
+        # Detect single scope usage BEFORE default Scope parameter masking it.
     $singleScopeList = $false
     if ($PSBoundParameters.Count -eq 1 -and $PSBoundParameters.ContainsKey('Var')) {
         if ($Var -in 'Process','User','Machine') { $singleScopeList = $true }
