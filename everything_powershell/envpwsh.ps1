@@ -9,15 +9,40 @@ function envs {
         [string]$Scope = 'Process',
 
         [Parameter(Position=2)]
-        [string]$Value
+        [string]$Value,
+
+        [switch]$Append
     )
 
-    # Get the Path environment variable for the current user
+    # Command examples : envs path user 'C:\MyTools'
+    
+    if ($Append) {
+        if (-not $PSBoundParameters.ContainsKey('Value')) {
+            throw "-Append requires -Value to supply what to append."
+        }
+        $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+        if ([string]::IsNullOrEmpty($current)) {
+            $new = $Value
+        } else {
+            # Use ';' like PATH style by default. User can include leading separator in -Value if they need something else.
+            $separator = ';'
+            # Avoid double separators
+            if ($current.EndsWith($separator)) {
+                $new = "$current$Value"
+            } elseif ($Value.StartsWith($separator)) {
+                $new = "$current$Value"
+            } else {
+                $new = "$current$separator$Value"
+            }
+        }
+        [Environment]::SetEnvironmentVariable($Var, $new, $Scope)
+        return $new
+    }
+
     if ($PSBoundParameters.ContainsKey('Value')) {
-        # Set
         [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
+        return $Value
     } else {
-        # Get
-        [Environment]::GetEnvironmentVariable($Var, $Scope)
+        return [Environment]::GetEnvironmentVariable($Var, $Scope)
     }
 }
