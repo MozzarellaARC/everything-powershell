@@ -1,5 +1,3 @@
-# Retrieve the current user's Path environment variable
-
 function envs {
     param(
         [string]$Scope,
