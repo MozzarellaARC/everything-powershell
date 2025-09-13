@@ -1,6 +1,14 @@
 
 ## Everything PowerShell (epwsh)
 
+***Binary locations:***
+```
+C:\Users\UserName
+C:\Program Files
+C:\Users\UserName\AppData\Local\Programs
+C:\Users\UserName\AppData\Local\Microsoft\WinGet\Packages
+```
+
 Minimal PowerShell 7 utilities to quickly launch applications, open their install directories, and search the filesystem from the terminal on Windows 11. Originally backed by the (now removed) Everything SDK; now uses the blazingly fast [`fd`](https://github.com/sharkdp/fd) when available, with a safe PowerShell fallback.
 
 ### Deprecation Note
