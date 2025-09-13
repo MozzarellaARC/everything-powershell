@@ -11,7 +11,7 @@ C:\Users\UserName\AppData\Local\Microsoft\WinGet\Packages
 
 ilk
 C:\ProgramData\Microsoft\Windows\Start Menu\Programs
-C:\Users\M\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
+C:\Users\UserName\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
 ```
 
 Minimal PowerShell 7 utilities to quickly launch applications, open their install directories, and search the filesystem from the terminal on Windows 11. Originally backed by the (now removed) Everything SDK; now uses the blazingly fast [`fd`](https://github.com/sharkdp/fd) exclusively.
