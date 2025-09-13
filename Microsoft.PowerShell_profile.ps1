@@ -9,3 +9,6 @@
 
 # Auto cd to the foreground Windows Explorer folder
 . "$PSScriptRoot\everything_powershell\auto_cd_quake_mode.ps1"
+
+# Load Environment Variable functions
+. "$PSScriptRoot\everything_powershell\envpwsh.ps1"
