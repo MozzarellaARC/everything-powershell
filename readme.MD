@@ -44,36 +44,32 @@ Open a PowerShell terminal inside (or create) your `Documents\PowerShell` folder
 ```pwsh
 git clone https://github.com/MozzarellaARC/everything-powershell.git .
 . $PROFILE
-```
-
+* `open <name>` – Launch an application (Start Menu shortcut match first, then executable discovery).
+* `open -Dir <name>` – Open the install folder (directory mode via switch; legacy `open-dir` wrapper still present).
 > If you already have a profile, ensure it dot-sources or imports these scripts (or copy the functions you need).
 
 ### Install fd (Recommended)
 Simplest (scoop):
-```pwsh
+open -Dir unity
 scoop install fd
 ```
 Or via Cargo:
 ```pwsh
-cargo install fd-find
-```
-Binary releases: https://github.com/sharkdp/fd/releases
-
-Verify:
+open / o              Launch application
+open -Dir <name>      Open install directory (preferred)
+open-dir / od         (Deprecated wrapper for: open -Dir)
 ```pwsh
 fd --version
 ```
 
-## Usage Examples
-Launch Chrome (Start Menu match):
-```pwsh
-open chrome
+od     -> open-dir (deprecated; use: open -Dir)
 ```
 Launch VS Code using alias:
 ```pwsh
 open vsc
 ```
-Open install directory for anything matching “unity”:
+open-dir / od  Use open -Dir instead
+oref           Old manual refresh (not needed)
 ```pwsh
 open-dir unity
 ```

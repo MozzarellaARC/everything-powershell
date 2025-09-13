@@ -241,59 +241,12 @@ public class Win32WindowManager {
     
     return $false
 }
-# Here is start the main script functionality
-# Here is start the main script functionality
-# Here is start the main script functionality
-# Here is start the main script functionality
-# Here is start the main script functionality
-function open-dir {
-    param(
-        [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
-        [string[]]$Name
-    )
-    
-    $userInput = ($Name -join ' ')
-    if ([string]::IsNullOrWhiteSpace($userInput)) {
-        Write-Host "No app name provided." -ForegroundColor Yellow
-        return
-    }
-    if (-not $Script:ProgressOnly) { Write-Host "Searching for executables: $userInput" -ForegroundColor Cyan }
-    $exeResults = @(Search-Executables -Query $userInput)
-    
-    if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) {
-        Write-Host "No .exe files found for: $userInput" -ForegroundColor Red
-        return
-    }
-    
-    if (($exeResults | Measure-Object).Count -eq 1) {
-        $exeToOpen = $exeResults[0]
-    } else {
-        Write-Host "`nAvailable executables:"
-        for ($i = 0; $i -lt ($exeResults | Measure-Object).Count; $i++) {
-            Write-Host ("  [{0}] {1}" -f ($i + 1), $exeResults[$i])
-        }
-        $choice = Read-Host "Enter number (1-$((($exeResults)|Measure-Object).Count)) or 'n' to cancel"
-        if ($choice -match '^(n|no)$') {
-            return
-        }
-        $total = (($exeResults)|Measure-Object).Count
-        if ($choice -notmatch '^[0-9]+$' -or [int]$choice -lt 1 -or [int]$choice -gt $total) {
-            Write-Host "❌ Invalid selection." -ForegroundColor Red
-            return
-        }
-        $exeToOpen = $exeResults[[int]$choice - 1]
-    }
-    
-    $exeDir = Split-Path $exeToOpen -Parent
-    if (-not $Script:ProgressOnly) { Write-Host "Opening directory: $exeDir" -ForegroundColor Green }
-    Start-Process "explorer.exe" -ArgumentList "`"$exeDir`""
-    if (-not $Script:ProgressOnly) { Write-Host "Done." -ForegroundColor DarkGreen }
-}
 
 function open {
-    param(
-        [Parameter(Mandatory=$true, Position=0, ValueFromRemainingArguments=$true)]
-        [string[]]$Name
+    [CmdletBinding()] param(
+        [Parameter(Position=0, ValueFromRemainingArguments=$true, Mandatory=$true)]
+        [string[]]$Name,
+        [switch]$Dir
     )
     
     # App aliases for faster typing
@@ -350,12 +303,15 @@ function open {
             $exeToLaunch = $exeResults[[int]$choice - 1]
         }
         
-        # Launch executable directly
-        try {
-            if (-not $Script:ProgressOnly) { Write-Host "Launching: $exeToLaunch" -ForegroundColor Green }
-            Start-Process -FilePath $exeToLaunch -WindowStyle Normal | Out-Null
-        } catch {
-            Write-Host "Failed to launch: $exeToLaunch" -ForegroundColor Red
+        if ($Dir) {
+            $exeDir = Split-Path $exeToLaunch -Parent
+            if (-not $Script:ProgressOnly) { Write-Host "Opening directory: $exeDir" -ForegroundColor Green }
+            Start-Process "explorer.exe" -ArgumentList "`"$exeDir`"" | Out-Null
+        } else {
+            try {
+                if (-not $Script:ProgressOnly) { Write-Host "Launching: $exeToLaunch" -ForegroundColor Green }
+                Start-Process -FilePath $exeToLaunch -WindowStyle Normal | Out-Null
+            } catch { Write-Host "Failed to launch: $exeToLaunch" -ForegroundColor Red }
         }
         return
     }
@@ -382,25 +338,29 @@ function open {
         $appSelected = $appMatches[[int]$choice - 1]
     }
     
-    # Try to bring existing window to foreground
+    if ($Dir) {
+        # Directory mode: open containing directory of selected shortcut target
+        $target = $appSelected.TargetPath
+        if (-not (Test-Path $target)) { Write-Host "Target path not found: $target" -ForegroundColor Red; return }
+        $exeDir = Split-Path $target -Parent
+        if (-not $Script:ProgressOnly) { Write-Host "Opening directory: $exeDir" -ForegroundColor Green }
+        Start-Process "explorer.exe" -ArgumentList "`"$exeDir`"" | Out-Null
+    } else {
+        # Try to bring existing window to foreground first
         if (-not $Script:ProgressOnly) { Write-Host "Checking if application is already running..." -ForegroundColor Gray }
-    if (Invoke-BringToForeground -AppName $appSelected.Name -TargetPath $appSelected.TargetPath) {
-        if (-not $Script:ProgressOnly) { Write-Host "Brought existing window to foreground: $($appSelected.Name)" -ForegroundColor Green }
-        return
+        if (Invoke-BringToForeground -AppName $appSelected.Name -TargetPath $appSelected.TargetPath) {
+            if (-not $Script:ProgressOnly) { Write-Host "Brought existing window to foreground: $($appSelected.Name)" -ForegroundColor Green }
+            return
+        }
+        try {
+            if (-not $Script:ProgressOnly) { Write-Host "Launching: $($appSelected.Name)" -ForegroundColor Green }
+            Start-Process -FilePath $appSelected.ShortcutPath -WindowStyle Normal | Out-Null
+        } catch { Write-Host "Failed to launch: $($appSelected.Name)" -ForegroundColor Red }
+        if (-not $Script:ProgressOnly) { Write-Host "Done." -ForegroundColor DarkGreen }
     }
-    
-    # Launch the app using shortcut
-    try {
-        if (-not $Script:ProgressOnly) { Write-Host "Launching: $($appSelected.Name)" -ForegroundColor Green }
-        Start-Process -FilePath $appSelected.ShortcutPath -WindowStyle Normal | Out-Null
-    } catch {
-        Write-Host "Failed to launch: $($appSelected.Name)" -ForegroundColor Red
-    }
-    if (-not $Script:ProgressOnly) { Write-Host "Done." -ForegroundColor DarkGreen }
 }
 
     Set-Alias o open
-    Set-Alias od open-dir
     Set-Alias oget Get-Apps
     Set-Alias oclear Clear-AppCache
 
