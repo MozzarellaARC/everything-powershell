@@ -30,6 +30,18 @@ function envs {
         }
     }
 
+    # If no arguments at all -> list every scope combined
+    if ($PSBoundParameters.Count -eq 0) {
+        $all = foreach ($sc in 'Process','User','Machine') { Get-AllScopeVars -ListScope $sc }
+        # Return objects; user can format. Provide a default nice view if not part of a pipeline.
+        if ($MyInvocation.ExpectingInput -or $PSCmdlet.MyInvocation.PipelinePosition -gt 1) {
+            return $all
+        } else {
+            $all | Sort-Object Scope, Name | Format-Table -AutoSize
+            return
+        }
+    }
+
     # Detect single scope usage BEFORE default Scope parameter masking it.
     $singleScopeList = $false
     if ($PSBoundParameters.Count -eq 1 -and $PSBoundParameters.ContainsKey('Var')) {
