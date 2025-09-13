@@ -1,11 +1,23 @@
 function envs {
+    [CmdletBinding()]
     param(
-        [string]$Scope,
+        [Parameter(Mandatory, Position=0)]
         [string]$Var,
-        # TODO: add value param for SetEnvironmentVariable
+
+        [Parameter(Position=1)]
+        [ValidateSet('Process','User','Machine')]
+        [string]$Scope = 'Process',
+
+        [Parameter(Position=2)]
         [string]$Value
     )
 
     # Get the Path environment variable for the current user
-    [Environment]::GetEnvironmentVariable($Var, $Scope)
+    if ($PSBoundParameters.ContainsKey('Value')) {
+        # Set
+        [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
+    } else {
+        # Get
+        [Environment]::GetEnvironmentVariable($Var, $Scope)
+    }
 }
