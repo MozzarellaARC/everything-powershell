@@ -22,31 +22,6 @@ function Invoke-FdSearch {
   try { fd @args 2>$null } catch { @() }
 }
 
-function Invoke-PowerShellFallbackSearch {
-  param(
-    [string]$Pattern,
-    [int]$Limit = 100,
-    [switch]$Files,
-    [switch]$Dirs,
-    [string[]]$Extensions,
-    [string[]]$Paths
-  )
-  $roots = if ($Paths -and $Paths.Count -gt 0) { $Paths } else { @($PWD.Path) }
-  $roots = $roots | Where-Object { Test-Path $_ }
-  $results = @()
-  foreach ($root in $roots) {
-    try {
-      $items = Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue -Force | Where-Object { -not $_.PSIsContainer -or $_.PSIsContainer }
-      if ($Files) { $items = $items | Where-Object { -not $_.PSIsContainer } }
-      if ($Dirs) { $items = $items | Where-Object { $_.PSIsContainer } }
-      if ($Extensions -and $Extensions.Count -gt 0) { $items = $items | Where-Object { -not $_.PSIsContainer -and ($Extensions -contains $_.Extension.TrimStart('.')) } }
-      if ($Pattern) { $items = $items | Where-Object { $_.FullName -like "*${Pattern}*" } }
-      $results += $items.FullName
-      if ($results.Count -ge $Limit) { break }
-    } catch { }
-  }
-  return ($results | Select-Object -First $Limit | Sort-Object -Unique)
-}
 
 function es {
   <#
@@ -71,13 +46,11 @@ function es {
   if ($Files -and $Dirs) { Write-Warning "Cannot specify both -Files and -Dirs; ignoring both."; $Files=$false; $Dirs=$false }
   $pattern = ($Query -join ' ').Trim()
 
-  if (Test-FdAvailable) {
-    Write-Host "🔍 fd search: '$pattern'" -ForegroundColor Cyan
-    $results = Invoke-FdSearch -Pattern $pattern -Limit $Limit -Files:$Files -Dirs:$Dirs -Extensions $Ext -Paths $Path
-  } else {
-    Write-Warning "'fd' not found in PATH. Using slow PowerShell fallback. Install from https://github.com/sharkdp/fd/releases" 
-    $results = Invoke-PowerShellFallbackSearch -Pattern $pattern -Limit $Limit -Files:$Files -Dirs:$Dirs -Extensions $Ext -Paths $Path
+  if (-not (Test-FdAvailable)) {
+    Write-Error "'fd' is required but was not found in PATH. Install from https://github.com/sharkdp/fd/releases and try again."; return
   }
+  Write-Host "🔍 fd search: '$pattern'" -ForegroundColor Cyan
+  $results = Invoke-FdSearch -Pattern $pattern -Limit $Limit -Files:$Files -Dirs:$Dirs -Extensions $Ext -Paths $Path
 
   if (-not $results -or $results.Count -eq 0) { Write-Host "No results." -ForegroundColor Yellow; return }
   $idx = 0

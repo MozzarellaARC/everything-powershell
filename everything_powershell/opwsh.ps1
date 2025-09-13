@@ -162,47 +162,12 @@ function Search-ExecutablesFd {
     } catch { return @() }
 }
 
-function Search-ExecutablesFallback {
-    param([string]$Query,[int]$Limit=30)
-    if (-not $Query) { return @() }
-    $roots = @(
-        "$env:ProgramFiles",
-        "${env:ProgramFiles(x86)}",
-        "$env:LOCALAPPDATA"
-    ) | Where-Object { $_ -and (Test-Path $_) }
-    $pattern = "*${Query}*.exe"
-    $results = New-Object System.Collections.Generic.List[string]
-    $rootIndex = 0
-    foreach ($root in $roots) {
-        $rootIndex++
-        if ($Script:ProgressOnly) {
-            $pct = [int](($rootIndex / $roots.Count) * 100)
-            Write-Progress -Activity "Searching executables" -Status "Root $rootIndex/$($roots.Count): $(Split-Path $root -Leaf)" -PercentComplete $pct
-        }
-        try {
-            Get-ChildItem -Path $root -Recurse -Filter $pattern -File -ErrorAction SilentlyContinue |
-                ForEach-Object { 
-                    if ($results.Count -ge $Limit) { return }
-                    $results.Add($_.FullName) | Out-Null
-                }
-        } catch { }
-        if ($results.Count -ge $Limit) { break }
-    }
-    if ($Script:ProgressOnly) { Write-Progress -Activity "Searching executables" -Completed -Status "Done" }
-    return @($results.ToArray() | Sort-Object -Unique | Select-Object -First $Limit)
-}
-
 function Search-Executables {
     param([string]$Query,[int]$Limit=50)
-    if (Test-FdAvailable) {
-        $fd = Search-ExecutablesFd -Query $Query -Limit $Limit
-        if ($fd -and ($fd | Measure-Object).Count -gt 0) { return @($fd) }
-        Write-Host "  ℹ️  'fd' found no matches in standard program directories. Falling back to slower scan." -ForegroundColor DarkYellow
-    }
-    if (-not (Test-FdAvailable)) {
-        Write-Host "  ⚙️  Falling back to slow PowerShell search (install 'fd' for faster results)" -ForegroundColor DarkYellow
-    }
-    return (Search-ExecutablesFallback -Query $Query -Limit $Limit)
+    if (-not (Test-FdAvailable)) { Write-Error "'fd' is required but not found in PATH. Install from https://github.com/sharkdp/fd/releases"; return @() }
+    if (-not $Query) { return @() }
+    $fd = Search-ExecutablesFd -Query $Query -Limit $Limit
+    return @($fd)
 }
 
 # Window management for bringing apps to foreground
@@ -361,15 +326,12 @@ function open {
     $apps = Get-Apps
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
     
-    # If no Start Menu matches, fallback to placeholder executable search
+    # If no Start Menu matches, run fd executable search directly
     if ($appMatches.Count -eq 0) {
         if (-not $Script:ProgressOnly) { Write-Host "No Start Menu matches found, searching executables..." -ForegroundColor Yellow }
     $exeResults = @(Search-Executables -Query $userInput)
         
-        if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) {
-            Write-Host "No apps found for: $userInput" -ForegroundColor Red
-            return
-        }
+        if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) { Write-Host "No apps found for: $userInput" -ForegroundColor Red; return }
         
         if (($exeResults | Measure-Object).Count -eq 1) {
             $exeToLaunch = $exeResults[0]

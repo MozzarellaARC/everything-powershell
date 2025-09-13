@@ -14,32 +14,30 @@ C:\ProgramData\Microsoft\Windows\Start Menu\Programs
 C:\Users\M\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
 ```
 
-Minimal PowerShell 7 utilities to quickly launch applications, open their install directories, and search the filesystem from the terminal on Windows 11. Originally backed by the (now removed) Everything SDK; now uses the blazingly fast [`fd`](https://github.com/sharkdp/fd) when available, with a safe PowerShell fallback.
+Minimal PowerShell 7 utilities to quickly launch applications, open their install directories, and search the filesystem from the terminal on Windows 11. Originally backed by the (now removed) Everything SDK; now uses the blazingly fast [`fd`](https://github.com/sharkdp/fd) exclusively.
 
 ### Deprecation Note
-The embedded Everything SDK integration was removed. The project keeps its name for continuity. Search now routes through `fd` (recommended) or a slower recursive fallback.
+The embedded Everything SDK integration was removed. The project keeps its name for continuity. Search now routes solely through `fd`.
 
 ## Features
 * `open <name>` – Launch an application (Start Menu shortcut match first, then executable discovery).
 * `open-dir <name>` – Open the install folder of an executable.
-* `es <pattern>` – General file/dir search with extension filtering, scope paths, and limits.
+* `es <pattern>` – General file/dir search (fd) with extension filtering, scope paths, and limits.
 * Caching of Start Menu shortcuts for fast repeated launches.
-* Graceful fallback when external tools are unavailable.
+* Fast, deterministic search powered by `fd` (required).
 
 ## How It Works (High Level)
 1. Start Menu Parsing: Recursively finds `.lnk` shortcuts under ProgramData and user AppData; caches results.
 2. Launch Workflow (`open`):
 	* Match shortcut names first (case-insensitive substring).
 	* If none: call executable search.
-3. Executable Search Order:
-	1. `fd` restricted to common install roots (Program Files, Program Files (x86), LocalAppData, ProgramData).
-	2. If zero results (or fd absent): limited PowerShell recursive scan with a guard on max results.
-4. `es` leverages `fd` (files, dirs, extensions, search paths). Falls back to PowerShell enumeration otherwise.
+3. Executable Search: `fd` restricted to common install roots (Program Files, Program Files (x86), LocalAppData, ProgramData). If it returns zero results, that's the final result (no built-in PowerShell crawl anymore).
+4. `es` leverages `fd` (files, dirs, extensions, search paths). `fd` is required; the command errors if missing.
 
 ## Requirements
 * PowerShell 7+
 * Windows 11 (most functions likely fine on Windows 10, but not tested)
-* Optional: `fd` in `PATH` for fast searching (recommended)
+* `fd` in `PATH` (required)
 
 ## Installation
 Open a PowerShell terminal inside (or create) your `Documents\PowerShell` folder:
@@ -98,7 +96,7 @@ open / o       Launch application
 open-dir / od  Open directory of selected executable
 oget           (Re)populate Start Menu cache (normally automatic)
 oclear         Clear cached Start Menu entries
-es             File / directory search (fd or fallback)
+es             File / directory search (fd)
 ```
 
 Deprecated (kept for reference, may be removed later):
@@ -121,7 +119,7 @@ Executable discovery roots with `fd` (in order):
 3. LocalAppData
 4. ProgramData
 
-Fallback roots (PowerShell mode): Program Files, Program Files (x86), LocalAppData.
+No PowerShell filesystem crawl fallback is included; install and keep `fd` available for all search features.
 
 ## License
 See `LICENSE` file.
