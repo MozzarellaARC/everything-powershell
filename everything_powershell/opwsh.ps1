@@ -1,6 +1,42 @@
 # Simplified app cache
 $Script:CachedApps = $null
 
+# Progress-only mode (suppresses decorative icons / extra lines)
+if (-not (Get-Variable -Name Script:ProgressOnly -Scope Script -ErrorAction SilentlyContinue)) {
+    $Script:ProgressOnly = $true  # default to true per user request
+}
+
+function Set-OpenAppOutputMode {
+    [CmdletBinding()] param(
+        [switch]$VerboseMode,
+        [switch]$Minimal,
+        [switch]$ProgressOnly
+    )
+    if ($PSBoundParameters.ContainsKey('VerboseMode')) { $Script:ProgressOnly = $false }
+    if ($PSBoundParameters.ContainsKey('Minimal')) { $Script:ProgressOnly = $true }
+    if ($PSBoundParameters.ContainsKey('ProgressOnly')) { $Script:ProgressOnly = $true }
+}
+
+function Write-Info {
+    param(
+        [string]$Message,
+        [ConsoleColor]$Color = [ConsoleColor]::Gray
+    )
+    if (-not $Script:ProgressOnly) {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
+
+function Write-Notice {
+    param(
+        [string]$Message,
+        [ConsoleColor]$Color = [ConsoleColor]::Cyan
+    )
+    if (-not $Script:ProgressOnly) {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
+
 # Get shortcut target path
 function Get-ShortcutTarget {
     param([string]$ShortcutPath)
@@ -21,11 +57,10 @@ function Get-ShortcutTarget {
 function Get-Apps {
     # Check if cache exists and is not empty
     if ($Script:CachedApps -and $Script:CachedApps.Count -gt 0) {
-        Write-Host "📋 Using cached applications ($($Script:CachedApps.Count) apps)" -ForegroundColor Green
+        if (-not $Script:ProgressOnly) { Write-Host "Using cached applications ($($Script:CachedApps.Count) apps)" -ForegroundColor Green }
         return $Script:CachedApps
     }
-    
-    Write-Host "🔍 Scanning Start Menu applications..." -ForegroundColor Cyan
+    if (-not $Script:ProgressOnly) { Write-Host "Scanning Start Menu applications..." -ForegroundColor Cyan }
     
     $paths = @(
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
@@ -35,16 +70,29 @@ function Get-Apps {
     $apps = @()
     $seenTargets = @{}
     
+    $totalShortcutCount = 0
+    $collected = 0
+    # Pre-count to have a determinate progress bar
+    foreach ($p in $paths) {
+        if (Test-Path $p) {
+            try { $totalShortcutCount += (Get-ChildItem -Path $p -Recurse -Filter *.lnk -ErrorAction SilentlyContinue | Measure-Object).Count } catch { }
+        }
+    }
+    if ($totalShortcutCount -eq 0) { $totalShortcutCount = 1 }
+
     foreach ($path in $paths) {
         if (Test-Path $path) {
-            Write-Host "  📂 Processing: $path" -ForegroundColor Gray
+            if (-not $Script:ProgressOnly) { Write-Host "  Processing: $path" -ForegroundColor Gray }
             $shortcuts = Get-ChildItem -Path $path -Recurse -Filter *.lnk -ErrorAction SilentlyContinue
             foreach ($shortcut in $shortcuts) {
+                $collected++
+                if ($Script:ProgressOnly) {
+                    $pct = [int](($collected / $totalShortcutCount) * 100)
+                    Write-Progress -Activity "Scanning Start Menu" -Status "${collected}/${totalShortcutCount} shortcuts" -PercentComplete $pct
+                }
                 $targetPath = Get-ShortcutTarget -ShortcutPath $shortcut.FullName
-                
                 if ($targetPath -and (Test-Path $targetPath -ErrorAction SilentlyContinue)) {
                     $normalizedTarget = $targetPath.ToLower()
-                    
                     if (-not $seenTargets.ContainsKey($normalizedTarget)) {
                         $apps += [PSCustomObject]@{
                             Name = $shortcut.BaseName
@@ -57,17 +105,25 @@ function Get-Apps {
             }
         }
     }
-    
+    if ($Script:ProgressOnly) { Write-Progress -Activity "Scanning Start Menu" -Completed -Status "Done" }
     $Script:CachedApps = $apps | Sort-Object Name
-    Write-Host "✅ Found $($Script:CachedApps.Count) applications (cached for future use)" -ForegroundColor Green
+    if (-not $Script:ProgressOnly) { Write-Host "Found $($Script:CachedApps.Count) applications (cached for future use)" -ForegroundColor Green }
     return $Script:CachedApps
 }
 
 # Clear cache
 function Clear-AppCache {
-    Write-Host "🧹 Clearing application cache..." -ForegroundColor Cyan
+    if ($Script:ProgressOnly) {
+        Write-Progress -Activity "Clear App Cache" -Status "Clearing..." -PercentComplete 50
+    } else {
+        Write-Host "Clearing application cache..." -ForegroundColor Cyan
+    }
     $Script:CachedApps = $null
-    Write-Host "✅ Cache cleared." -ForegroundColor Green
+    if ($Script:ProgressOnly) {
+        Write-Progress -Activity "Clear App Cache" -Completed -Status "Done"
+    } else {
+        Write-Host "Cache cleared." -ForegroundColor Green
+    }
 }
 
 # fd integration (replacement for deprecated Everything SDK)
@@ -116,16 +172,23 @@ function Search-ExecutablesFallback {
     ) | Where-Object { $_ -and (Test-Path $_) }
     $pattern = "*${Query}*.exe"
     $results = New-Object System.Collections.Generic.List[string]
+    $rootIndex = 0
     foreach ($root in $roots) {
+        $rootIndex++
+        if ($Script:ProgressOnly) {
+            $pct = [int](($rootIndex / $roots.Count) * 100)
+            Write-Progress -Activity "Searching executables" -Status "Root $rootIndex/$($roots.Count): $(Split-Path $root -Leaf)" -PercentComplete $pct
+        }
         try {
             Get-ChildItem -Path $root -Recurse -Filter $pattern -File -ErrorAction SilentlyContinue |
                 ForEach-Object { 
-                    if ($results.Count -ge $Limit) { break }
+                    if ($results.Count -ge $Limit) { return }
                     $results.Add($_.FullName) | Out-Null
                 }
         } catch { }
         if ($results.Count -ge $Limit) { break }
     }
+    if ($Script:ProgressOnly) { Write-Progress -Activity "Searching executables" -Completed -Status "Done" }
     return @($results.ToArray() | Sort-Object -Unique | Select-Object -First $Limit)
 }
 
@@ -226,15 +289,14 @@ function open-dir {
     
     $userInput = ($Name -join ' ')
     if ([string]::IsNullOrWhiteSpace($userInput)) {
-        Write-Host "❌ No app name provided." -ForegroundColor Yellow
+        Write-Host "No app name provided." -ForegroundColor Yellow
         return
     }
-    
-    Write-Host "🔍 Searching for executables (fd fallback): $userInput" -ForegroundColor Cyan
+    if (-not $Script:ProgressOnly) { Write-Host "Searching for executables: $userInput" -ForegroundColor Cyan }
     $exeResults = @(Search-Executables -Query $userInput)
     
     if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) {
-        Write-Host "❌ No .exe files found for: $userInput" -ForegroundColor Red
+        Write-Host "No .exe files found for: $userInput" -ForegroundColor Red
         return
     }
     
@@ -258,8 +320,9 @@ function open-dir {
     }
     
     $exeDir = Split-Path $exeToOpen -Parent
-    Write-Host "📂 Opening directory: $exeDir" -ForegroundColor Green
+    if (-not $Script:ProgressOnly) { Write-Host "Opening directory: $exeDir" -ForegroundColor Green }
     Start-Process "explorer.exe" -ArgumentList "`"$exeDir`""
+    if (-not $Script:ProgressOnly) { Write-Host "Done." -ForegroundColor DarkGreen }
 }
 
 function open {
@@ -281,7 +344,7 @@ function open {
     
     $userInput = ($Name -join ' ')
     if ([string]::IsNullOrWhiteSpace($userInput)) {
-        Write-Host "❌ No app name provided." -ForegroundColor Yellow
+        Write-Host "No app name provided." -ForegroundColor Yellow
         return
     }
     
@@ -290,21 +353,21 @@ function open {
     $userInputLower = $userInput.ToLower()
     if ($appAliases.ContainsKey($userInputLower)) {
         $searchInput = $appAliases[$userInputLower]
-        Write-Host "📝 Using alias: '$userInput' → '$searchInput'" -ForegroundColor Gray
+        if (-not $Script:ProgressOnly) { Write-Host "Using alias: '$userInput' -> '$searchInput'" -ForegroundColor Gray }
     }
     
     # Get Start Menu apps
-    Write-Host "🔍 Searching for applications: $searchInput" -ForegroundColor Cyan
+    if (-not $Script:ProgressOnly) { Write-Host "Searching for applications: $searchInput" -ForegroundColor Cyan }
     $apps = Get-Apps
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
     
     # If no Start Menu matches, fallback to placeholder executable search
     if ($appMatches.Count -eq 0) {
-        Write-Host "⚠️  No Start Menu matches found, searching executables (fd)..." -ForegroundColor Yellow
+        if (-not $Script:ProgressOnly) { Write-Host "No Start Menu matches found, searching executables..." -ForegroundColor Yellow }
     $exeResults = @(Search-Executables -Query $userInput)
         
         if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) {
-            Write-Host "❌ No apps found for: $userInput" -ForegroundColor Red
+            Write-Host "No apps found for: $userInput" -ForegroundColor Red
             return
         }
         
@@ -327,10 +390,10 @@ function open {
         
         # Launch executable directly
         try {
-            Write-Host "🚀 Launching: $exeToLaunch" -ForegroundColor Green
+            if (-not $Script:ProgressOnly) { Write-Host "Launching: $exeToLaunch" -ForegroundColor Green }
             Start-Process -FilePath $exeToLaunch -WindowStyle Normal | Out-Null
         } catch {
-            Write-Host "❌ Failed to launch: $exeToLaunch" -ForegroundColor Red
+            Write-Host "Failed to launch: $exeToLaunch" -ForegroundColor Red
         }
         return
     }
@@ -358,19 +421,20 @@ function open {
     }
     
     # Try to bring existing window to foreground
-    Write-Host "🔄 Checking if application is already running..." -ForegroundColor Gray
+        if (-not $Script:ProgressOnly) { Write-Host "Checking if application is already running..." -ForegroundColor Gray }
     if (Invoke-BringToForeground -AppName $appSelected.Name -TargetPath $appSelected.TargetPath) {
-        Write-Host "✅ Brought existing window to foreground: $($appSelected.Name)" -ForegroundColor Green
+        if (-not $Script:ProgressOnly) { Write-Host "Brought existing window to foreground: $($appSelected.Name)" -ForegroundColor Green }
         return
     }
     
     # Launch the app using shortcut
     try {
-        Write-Host "🚀 Launching: $($appSelected.Name)" -ForegroundColor Green
+        if (-not $Script:ProgressOnly) { Write-Host "Launching: $($appSelected.Name)" -ForegroundColor Green }
         Start-Process -FilePath $appSelected.ShortcutPath -WindowStyle Normal | Out-Null
     } catch {
-        Write-Host "❌ Failed to launch: $($appSelected.Name)" -ForegroundColor Red
+        Write-Host "Failed to launch: $($appSelected.Name)" -ForegroundColor Red
     }
+    if (-not $Script:ProgressOnly) { Write-Host "Done." -ForegroundColor DarkGreen }
 }
 
     Set-Alias o open
