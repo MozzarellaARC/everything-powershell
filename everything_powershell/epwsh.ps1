@@ -11,15 +11,15 @@ function Invoke-FdSearch {
   )
   if (-not (Test-FdAvailable)) { return @() }
   if (-not $Pattern) { $Pattern = '' }
-  $args = @('--color','never','--max-results',$Limit)
-  if ($Files) { $args += @('-t','f') }
-  if ($Dirs) { $args += @('-t','d') }
-  foreach ($ext in ($Extensions | Where-Object { $_ })) { $args += @('-e',$ext) }
+  $fdArgs = @('--color','never','--max-results',$Limit)
+  if ($Files) { $fdArgs += @('-t','f') }
+  if ($Dirs) { $fdArgs += @('-t','d') }
+  foreach ($ext in ($Extensions | Where-Object { $_ })) { $fdArgs += @('-e',$ext) }
   if ($Paths -and $Paths.Count -gt 0) {
-    foreach ($p in $Paths) { if (Test-Path $p) { $args += '--search-path'; $args += (Resolve-Path $p).Path } }
+    foreach ($p in $Paths) { if (Test-Path $p) { $fdArgs += '--search-path'; $fdArgs += (Resolve-Path $p).Path } }
   }
-  $args += $Pattern
-  try { fd @args 2>$null } catch { @() }
+  $fdArgs += $Pattern
+  try { fd @fdArgs 2>$null } catch { @() }
 }
 
 
