@@ -1,58 +1,5 @@
 # Simplified app cache
 $Script:CachedApps = $null
-
-# Progress-only mode (suppresses decorative icons / extra lines)
-if (-not (Get-Variable -Name Script:ProgressOnly -Scope Script -ErrorAction SilentlyContinue)) {
-    $Script:ProgressOnly = $true  # default to true per user request
-}
-
-function Set-OpenAppOutputMode {
-    [CmdletBinding()] param(
-        [switch]$VerboseMode,
-        [switch]$Minimal,
-        [switch]$ProgressOnly
-    )
-    if ($PSBoundParameters.ContainsKey('VerboseMode')) { $Script:ProgressOnly = $false }
-    if ($PSBoundParameters.ContainsKey('Minimal')) { $Script:ProgressOnly = $true }
-    if ($PSBoundParameters.ContainsKey('ProgressOnly')) { $Script:ProgressOnly = $true }
-}
-
-function Write-Info {
-    param(
-        [string]$Message,
-        [ConsoleColor]$Color = [ConsoleColor]::Gray
-    )
-    if (-not $Script:ProgressOnly) {
-        Write-Host $Message -ForegroundColor $Color
-    }
-}
-
-function Write-Notice {
-    param(
-        [string]$Message,
-        [ConsoleColor]$Color = [ConsoleColor]::Cyan
-    )
-    if (-not $Script:ProgressOnly) {
-        Write-Host $Message -ForegroundColor $Color
-    }
-}
-
-# Get shortcut target path
-function Get-ShortcutTarget {
-    param([string]$ShortcutPath)
-    try {
-        $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($ShortcutPath)
-        return $shortcut.TargetPath
-    } catch {
-        return $null
-    } finally {
-        if ($shell) { 
-            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null 
-        }
-    }
-}
-
 # Parse Start Menu applications
 function Get-Apps {
     # Check if cache exists and is not empty
@@ -80,6 +27,10 @@ function Get-Apps {
     }
     if ($totalShortcutCount -eq 0) { $totalShortcutCount = 1 }
 
+    # Create COM shell once (faster than per-shortcut instantiation)
+    $shell = $null
+    try { $shell = New-Object -ComObject WScript.Shell } catch { $shell = $null }
+
     foreach ($path in $paths) {
         if (Test-Path $path) {
             if (-not $Script:ProgressOnly) { Write-Host "  Processing: $path" -ForegroundColor Gray }
@@ -90,7 +41,13 @@ function Get-Apps {
                     $pct = [int](($collected / $totalShortcutCount) * 100)
                     Write-Progress -Activity "Scanning Start Menu" -Status "${collected}/${totalShortcutCount} shortcuts" -PercentComplete $pct
                 }
-                $targetPath = Get-ShortcutTarget -ShortcutPath $shortcut.FullName
+                $targetPath = $null
+                if ($shell) {
+                    try {
+                        $link = $shell.CreateShortcut($shortcut.FullName)
+                        $targetPath = $link.TargetPath
+                    } catch { $targetPath = $null }
+                }
                 if ($targetPath -and (Test-Path $targetPath -ErrorAction SilentlyContinue)) {
                     $normalizedTarget = $targetPath.ToLower()
                     if (-not $seenTargets.ContainsKey($normalizedTarget)) {
@@ -105,6 +62,7 @@ function Get-Apps {
             }
         }
     }
+    if ($shell) { try { [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null } catch { } }
     if ($Script:ProgressOnly) { Write-Progress -Activity "Scanning Start Menu" -Completed -Status "Done" }
     $Script:CachedApps = $apps | Sort-Object Name
     if (-not $Script:ProgressOnly) { Write-Host "Found $($Script:CachedApps.Count) applications (cached for future use)" -ForegroundColor Green }
