@@ -99,7 +99,7 @@ function Search-ExecutablesFd {
     # -t f : files only
     # -e exe : extension exe
     # Case-insensitive by default on Windows; use smart case behavior.
-    $args = @('-t','f','-e','exe','--max-results',$Limit,'--color','never')
+    $fdArgs = @('-t','f','-e','exe','--max-results',$Limit,'--color','never')
 
     # Standard program search roots (can be expanded later or made configurable)
     $roots = @(
@@ -109,12 +109,12 @@ function Search-ExecutablesFd {
         "$env:ProgramData"
     ) | Where-Object { $_ -and (Test-Path $_) }
 
-    foreach ($r in $roots) { $args += @('--search-path', (Resolve-Path $r).Path) }
+    foreach ($r in $roots) { $fdArgs += @('--search-path', (Resolve-Path $r).Path) }
 
     # Append the pattern (fd treats this as a regex / fuzzy style literal)
-    $args += $Query
+    $fdArgs += $Query
     try {
-        $output = fd @args 2>$null
+        $output = fd @fdArgs 2>$null
         $filtered = $output | Where-Object { $_ -match '\\.exe$' }
         return @($filtered)
     } catch { return @() }
