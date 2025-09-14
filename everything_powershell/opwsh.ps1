@@ -1,5 +1,7 @@
 # Simplified app cache
 $Script:CachedApps = $null
+# Force progress-only mode always on (hide verbose host messages, show progress bars)
+$Script:ProgressOnly = $true
 # Parse Start Menu applications
 function Get-Apps {
     # Check if cache exists and is not empty
