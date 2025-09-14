@@ -183,6 +183,12 @@ public class Win32WindowManager {
         }
     }
     
+    # Fuzzy fallback: if no processes found, search by partial app name match
+    if ($processes.Count -eq 0) {
+        $allProcesses = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "*$AppName*" -or $_.MainWindowTitle -like "*$AppName*" }
+        $processes += $allProcesses
+    }
+    
     # Try to bring window to foreground
     foreach ($proc in ($processes | Sort-Object Id -Unique)) {
         if ($proc.MainWindowHandle -ne 0) {
