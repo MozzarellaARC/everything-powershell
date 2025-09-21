@@ -12,3 +12,6 @@
 
 # Load Environment Variable functions
 . "$PSScriptRoot\everything_powershell\envpwsh.ps1"
+
+# Load Context Menu Override function
+. "$PSScriptRoot\everything_powershell\context_override.ps1"
