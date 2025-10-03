@@ -75,7 +75,6 @@ function imageto {
 	$countTotal = 0
 	$countConverted = 0
 	$countSkipped = 0
-	$countUnsupported = 0
 	$errors = 0
 
 	for ($index = 0; $index -lt $files.Count; $index++) {
