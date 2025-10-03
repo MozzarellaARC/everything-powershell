@@ -15,3 +15,6 @@
 
 # Load Context Menu Override function
 . "$PSScriptRoot\everything_powershell\context_override.ps1"
+
+# Initialize Headless Blender
+. "$PSScriptRoot\everything_powershell\init_pwsh`.ps1"
