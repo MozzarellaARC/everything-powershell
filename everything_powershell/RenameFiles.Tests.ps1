@@ -2,6 +2,50 @@
 # Requires Pester 5.x (Install: Install-Module -Name Pester -Force -SkipPublisherCheck)
 
 BeforeAll {
+    Context "Screaming Snake Case Conversion - Files" {
+        
+        It "Converts lowercase to SCREAMING_SNAKE_CASE" {
+            New-TestFile -Path $testPath -Name "myfile.txt"
+            REPWSH-Organization -ScreamingSnake -Path $testPath
+            
+            Test-Path (Join-Path $testPath "MYFILE.TXT") | Should -Be $true
+        }
+        
+        It "Converts PascalCase to SCREAMING_SNAKE_CASE" {
+            New-TestFile -Path $testPath -Name "MyFileName.txt"
+            REPWSH-Organization -ScreamingSnake -Path $testPath
+            
+            Test-Path (Join-Path $testPath "MY_FILE_NAME.TXT") | Should -Be $true
+        }
+        
+        It "Converts camelCase to SCREAMING_SNAKE_CASE" {
+            New-TestFile -Path $testPath -Name "myFileName.txt"
+            REPWSH-Organization -ScreamingSnake -Path $testPath
+            
+            Test-Path (Join-Path $testPath "MY_FILE_NAME.TXT") | Should -Be $true
+        }
+        
+        It "Converts spaces to SCREAMING_SNAKE_CASE" {
+            New-TestFile -Path $testPath -Name "My File Name.txt"
+            REPWSH-Organization -ScreamingSnake -Path $testPath
+            
+            Test-Path (Join-Path $testPath "MY_FILE_NAME.TXT") | Should -Be $true
+        }
+        
+        It "Preserves already correct SCREAMING_SNAKE_CASE names" {
+            New-TestFile -Path $testPath -Name "ALREADY_SCREAMING.TXT"
+            REPWSH-Organization -ScreamingSnake -Path $testPath
+            
+            Test-Path (Join-Path $testPath "ALREADY_SCREAMING.TXT") | Should -Be $true
+        }
+        
+        It "Converts snake_case to SCREAMING_SNAKE_CASE" {
+            New-TestFile -Path $testPath -Name "my_file_name.txt"
+            REPWSH-Organization -ScreamingSnake -Path $testPath
+            
+            Test-Path (Join-Path $testPath "MY_FILE_NAME.TXT") | Should -Be $true
+        }
+    }
     # Import the function to test
     # Adjust the path to your script file
     . "$PSScriptRoot\RenameFiles.ps1"
@@ -185,7 +229,7 @@ Describe "REPWSH-Organization" {
     
     Context "Parameter Validation" {
         
-        It "Throws error when neither -Snake nor -Camel is specified" {
+        It "Throws error when no case parameter is specified" {
             { REPWSH-Organization -Path $testPath -ErrorAction Stop } | Should -Throw
         }
         

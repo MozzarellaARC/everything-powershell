@@ -8,7 +8,10 @@ function REPWSH-Organization {
         Use -Dir switch to include directories in the renaming process.
     
     .PARAMETER Snake
-        Rename items to snake_case format
+        Rename items to snake_case format (lowercase with underscores)
+    
+    .PARAMETER ScreamingSnake
+        Rename items to SCREAMING_SNAKE_CASE format (uppercase with underscores)
     
     .PARAMETER Camel
         Rename items to camelCase format
@@ -24,6 +27,10 @@ function REPWSH-Organization {
         Renames all files in current directory to snake_case
     
     .EXAMPLE
+        REPWSH-Organization -ScreamingSnake
+        Renames all files in current directory to SCREAMING_SNAKE_CASE
+    
+    .EXAMPLE
         REPWSH-Organization -Camel -Dir
         Renames all files and directories to camelCase
     
@@ -37,6 +44,9 @@ function REPWSH-Organization {
         [Parameter(ParameterSetName='Snake')]
         [switch]$Snake,
         
+        [Parameter(ParameterSetName='ScreamingSnake')]
+        [switch]$ScreamingSnake,
+        
         [Parameter(ParameterSetName='Camel')]
         [switch]$Camel,
         
@@ -45,9 +55,9 @@ function REPWSH-Organization {
         [string]$Path = (Get-Location)
     )
     
-    # Validate that either Snake or Camel is specified
-    if (-not $Snake -and -not $Camel) {
-        Write-Error "Please specify either -Snake or -Camel parameter"
+    # Validate that either Snake, ScreamingSnake, or Camel is specified
+    if (-not $Snake -and -not $ScreamingSnake -and -not $Camel) {
+        Write-Error "Please specify either -Snake, -ScreamingSnake, or -Camel parameter"
         return
     }
     
@@ -59,7 +69,10 @@ function REPWSH-Organization {
     
     # Function to convert string to snake_case
     function ConvertTo-SnakeCase {
-        param([string]$InputString)
+        param(
+            [string]$InputString,
+            [bool]$Screaming = $false
+        )
         
         # Remove extension
         $extension = [System.IO.Path]::GetExtension($InputString)
@@ -76,8 +89,14 @@ function REPWSH-Organization {
         # Replace spaces and special characters with underscores
         $result = $result -replace '[^a-zA-Z0-9]+', '_'
         
-        # Convert to lowercase
-        $result = $result.ToLower()
+        # Convert to appropriate case
+        if ($Screaming) {
+            $result = $result.ToUpper()
+            $extension = $extension.ToUpper()
+        } else {
+            $result = $result.ToLower()
+            $extension = $extension.ToLower()
+        }
         
         # Remove leading/trailing underscores
         $result = $result.Trim('_')
@@ -85,7 +104,7 @@ function REPWSH-Organization {
         # Replace multiple underscores with single underscore
         $result = $result -replace '_+', '_'
         
-        return $result + $extension.ToLower()
+        return $result + $extension
     }
     
     # Function to convert string to camelCase
@@ -133,7 +152,9 @@ function REPWSH-Organization {
         
         # Convert based on selected case
         $newName = if ($Snake) {
-            ConvertTo-SnakeCase -InputString $oldName
+            ConvertTo-SnakeCase -InputString $oldName -Screaming $false
+        } elseif ($ScreamingSnake) {
+            ConvertTo-SnakeCase -InputString $oldName -Screaming $true
         } else {
             ConvertTo-CamelCase -InputString $oldName
         }
