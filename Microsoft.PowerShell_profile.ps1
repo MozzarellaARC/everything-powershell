@@ -18,3 +18,6 @@
 
 # Initialize Headless Blender
 . "$PSScriptRoot\everything_powershell\init_pwsh`.ps1"
+
+# Batch Organization
+. "$PSScriptRoot\everything_powershell\repwsh`.ps1"
