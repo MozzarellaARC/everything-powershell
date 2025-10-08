@@ -1,7 +1,7 @@
 function REPWSH-Organization {
     <#
     .SYNOPSIS
-        Renames files in the current directory to snake_case, SCREAMING_SNAKE_CASE, or camelCase.
+        Renames files or folders in the current directory to snake_case, SCREAMING_SNAKE_CASE, or camelCase.
 
     .DESCRIPTION
         Converts all separators (spaces, dashes, etc.) into underscores.
@@ -18,7 +18,10 @@ function REPWSH-Organization {
         [switch]$ScreamingSnake,
         
         [Parameter(ParameterSetName='Camel')]
-        [switch]$Camel
+        [switch]$Camel,
+
+        [Parameter(ParameterSetName='__AllParameterSets')]
+        [switch]$Dir
     )
     
     if (-not $Snake -and -not $ScreamingSnake -and -not $Camel) {
@@ -48,7 +51,7 @@ function REPWSH-Organization {
         $name = [System.IO.Path]::GetFileNameWithoutExtension($InputString)
 
         $words = @($name -split '[^a-zA-Z0-9]+' | Where-Object { $_ })
-        if ($words.Count -ceq 0) { return $InputString }
+        if ($words.Count -eq 0) { return $InputString }
 
         $result = $words[0].ToLower()
         for ($i = 1; $i -lt $words.Count; $i++) {
@@ -57,7 +60,13 @@ function REPWSH-Organization {
         return $result + $extension.ToLower()
     }
 
-    $items = Get-ChildItem -File
+    # Select files or directories depending on flag
+    $items = if ($Dir) {
+        Get-ChildItem -Directory
+    } else {
+        Get-ChildItem -File
+    }
+
     $renamedCount = 0
     $skippedCount = 0
 
@@ -78,38 +87,34 @@ function REPWSH-Organization {
         }
 
         $oldPath = $item.FullName
-        $parentPath = $item.DirectoryName
+        $parentPath = Split-Path -Path $item.FullName -Parent
         $newPath = Join-Path -Path $parentPath -ChildPath $newName
 
         try {
-                # Attempt normal rename first
-                Rename-Item -Path $oldPath -NewName $newName -ErrorAction Stop
-            }
-            catch {
-                # If it fails because the name only differs by case (Windows issue)
-                if ($_.Exception.Message -match 'already exists') {
-                    try {
-                        $tempName = "$newName.__temp__"
-                        Rename-Item -Path $oldPath -NewName $tempName -ErrorAction Stop
-                        Rename-Item -Path (Join-Path $parentPath $tempName) -NewName $newName -ErrorAction Stop
-                        Write-Host "Renamed (case-only): $oldName -> $newName" -ForegroundColor Cyan
-                        $renamedCount++
-                        continue
-                    }
-                    catch {
-                        Write-Warning "Failed to perform case-only rename for $oldName -> $newName"
-                        $skippedCount++
-                        continue
-                    }
-                } else {
-                    Write-Warning "Skipped: $oldName -> $newName ($($_.Exception.Message))"
-                    $skippedCount++
-                    continue
-                }
-            }
-
+            # Attempt normal rename first
+            Rename-Item -Path $oldPath -NewName $newName -ErrorAction Stop
             Write-Host "Renamed: $oldName -> $newName" -ForegroundColor Green
             $renamedCount++
+        }
+        catch {
+            # If it fails because the name only differs by case (Windows issue)
+            if ($_.Exception.Message -match 'already exists') {
+                try {
+                    $tempName = "$newName.__temp__"
+                    Rename-Item -Path $oldPath -NewName $tempName -ErrorAction Stop
+                    Rename-Item -Path (Join-Path $parentPath $tempName) -NewName $newName -ErrorAction Stop
+                    Write-Host "Renamed (case-only): $oldName -> $newName" -ForegroundColor Cyan
+                    $renamedCount++
+                }
+                catch {
+                    Write-Warning "Failed to perform case-only rename for $oldName -> $newName"
+                    $skippedCount++
+                }
+            } else {
+                Write-Warning "Skipped: $oldName -> $newName ($($_.Exception.Message))"
+                $skippedCount++
+            }
+        }
     }
 
     Write-Host "`nSummary:" -ForegroundColor Cyan
