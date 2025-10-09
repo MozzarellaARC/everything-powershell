@@ -31,6 +31,33 @@ function envs {
         }
     }
 
+    function New-EnvRecord {
+        param(
+            [string]$RecordScope,
+            [string]$RecordName,
+            $RecordValue
+        )
+
+        [pscustomobject][ordered]@{
+            Scope = $RecordScope
+            Name  = $RecordName
+            Value = $RecordValue
+        }
+    }
+
+    function Format-EnvValueForDisplay {
+        param($InputValue)
+
+        if ($null -eq $InputValue) { return $null }
+
+        if ($InputValue -is [string]) {
+            $normalized = $InputValue -replace ';', ";`n"
+            return $normalized.TrimEnd("`n")
+        }
+
+        return $InputValue
+    }
+
     # If no arguments at all -> list every scope combined
     if ($PSBoundParameters.Count -eq 0) {
         $all = foreach ($sc in 'Process','User','Machine') { Get-AllScopeVars -ListScope $sc }
@@ -90,69 +117,70 @@ NOTES:
         if ($Scope -in 'Process','User','Machine') { $singleScopeList = $true; $Var = $null }
     }
 
-    if ($singleScopeList) {
-        return Get-AllScopeVars -ListScope ($Var ?? $Scope)
-    }
-
     $originalProcessValue = $null
     $didModify = $false
     $result = $null
 
-    if ($Set) {
-        if (-not $Var) { throw "-Set requires a variable name (first positional argument)." }
-        if (-not $PSBoundParameters.ContainsKey('Value')) { throw "-Set requires -Value (third positional argument)." }
-        # Set the variable itself first
-        [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
-        $didModify = $true
-        $result = $Value
-
-        # Now append a reference %Var% to PATH at same scope (if Var not PATH itself)
-        if ($Var -ine 'PATH') {
-            $pathCurrent = [Environment]::GetEnvironmentVariable('Path', $Scope)
-            $token = "%$Var%"
-            $already = $false
-            if ($pathCurrent) {
-                $parts = $pathCurrent -split ';'
-                foreach ($p in $parts) { if ($p.Trim().ToLower() -eq $token.ToLower()) { $already = $true; break } }
-            }
-            if (-not $already) {
-                $newPath = if ([string]::IsNullOrEmpty($pathCurrent)) { $token } elseif ($pathCurrent.EndsWith(';')) { "$pathCurrent$token" } else { "$pathCurrent;$token" }
-                [Environment]::SetEnvironmentVariable('Path', $newPath, $Scope)
-                Write-Verbose "Appended $token to PATH at scope $Scope." 
-            } else {
-                Write-Verbose "$token already present in PATH at scope $Scope."
-            }
-        }
-    }
-    elseif ($Append) {
-        if (-not $PSBoundParameters.ContainsKey('Value')) {
-            throw "-Append requires -Value to supply what to append."
-        }
-        if (-not $Var) { throw "-Append requires a variable name (first positional argument)." }
-        $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
-        if ([string]::IsNullOrEmpty($current)) {
-            $new = $Value
-        } else {
-            $separator = ';'
-            if ($current.EndsWith($separator) -or $Value.StartsWith($separator)) {
-                $new = "$current$Value"
-            } else {
-                $new = "$current$separator$Value"
-            }
-        }
-        [Environment]::SetEnvironmentVariable($Var, $new, $Scope)
-        $didModify = $true
-        $result = $new
-    }
-    elseif ($PSBoundParameters.ContainsKey('Value')) {
-        if (-not $Var) { throw "Setting a value requires a variable name (first positional argument)." }
-        [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
-        $didModify = $true
-        $result = $Value
+    if ($singleScopeList) {
+        $result = Get-AllScopeVars -ListScope ($Var ?? $Scope)
     }
     else {
-        if (-not $Var) { throw "Provide a variable name or a single scope (Process/User/Machine) to list all." }
-        $result = [Environment]::GetEnvironmentVariable($Var, $Scope)
+        if ($Set) {
+            if (-not $Var) { throw "-Set requires a variable name (first positional argument)." }
+            if (-not $PSBoundParameters.ContainsKey('Value')) { throw "-Set requires -Value (third positional argument)." }
+            # Set the variable itself first
+            [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
+            $didModify = $true
+            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+
+            # Now append a reference %Var% to PATH at same scope (if Var not PATH itself)
+            if ($Var -ine 'PATH') {
+                $pathCurrent = [Environment]::GetEnvironmentVariable('Path', $Scope)
+                $token = "%$Var%"
+                $already = $false
+                if ($pathCurrent) {
+                    $parts = $pathCurrent -split ';'
+                    foreach ($p in $parts) { if ($p.Trim().ToLower() -eq $token.ToLower()) { $already = $true; break } }
+                }
+                if (-not $already) {
+                    $newPath = if ([string]::IsNullOrEmpty($pathCurrent)) { $token } elseif ($pathCurrent.EndsWith(';')) { "$pathCurrent$token" } else { "$pathCurrent;$token" }
+                    [Environment]::SetEnvironmentVariable('Path', $newPath, $Scope)
+                    Write-Verbose "Appended $token to PATH at scope $Scope." 
+                } else {
+                    Write-Verbose "$token already present in PATH at scope $Scope."
+                }
+            }
+        }
+        elseif ($Append) {
+            if (-not $PSBoundParameters.ContainsKey('Value')) {
+                throw "-Append requires -Value to supply what to append."
+            }
+            if (-not $Var) { throw "-Append requires a variable name (first positional argument)." }
+            $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            if ([string]::IsNullOrEmpty($current)) {
+                $new = $Value
+            } else {
+                $separator = ';'
+                if ($current.EndsWith($separator) -or $Value.StartsWith($separator)) {
+                    $new = "$current$Value"
+                } else {
+                    $new = "$current$separator$Value"
+                }
+            }
+            [Environment]::SetEnvironmentVariable($Var, $new, $Scope)
+            $didModify = $true
+            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+        }
+        elseif ($PSBoundParameters.ContainsKey('Value')) {
+            if (-not $Var) { throw "Setting a value requires a variable name (first positional argument)." }
+            [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
+            $didModify = $true
+            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+        }
+        else {
+            if (-not $Var) { throw "Provide a variable name or a single scope (Process/User/Machine) to list all." }
+            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+        }
     }
 
     if ($Refresh -and $didModify) {
@@ -174,6 +202,19 @@ NOTES:
             }
         }
     }
+    if ($null -eq $result) { return }
 
-    return $result
+    $pipelineLength  = $PSCmdlet.MyInvocation.PipelineLength
+    $pipelinePosition = $PSCmdlet.MyInvocation.PipelinePosition
+
+    $inPipeline = $pipelineLength -gt 1 -and $pipelinePosition -lt $pipelineLength
+
+    if ($inPipeline) {
+        return $result
+    }
+
+    $items = @($result)
+
+    $items | Format-Table -AutoSize -Wrap -Property Scope, Name, @{ Name = 'Value'; Expression = { Format-EnvValueForDisplay $_.Value } }
+    return
 }
