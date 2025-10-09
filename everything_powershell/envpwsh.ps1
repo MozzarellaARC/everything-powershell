@@ -5,7 +5,10 @@ function envs {
         [string]$Var,
 
         [Parameter(Position=1)]
-        [ValidateSet('Process','User','Machine')]
+        [ArgumentCompleter({
+            param($commandName,$parameterName,$wordToComplete)
+            'Process','User','Machine' | Where-Object { $_ -like "$wordToComplete*" }
+        })]
         [string]$Scope = 'Process',
 
         [Parameter(Position=2)]
@@ -51,11 +54,32 @@ function envs {
         if ($null -eq $InputValue) { return $null }
 
         if ($InputValue -is [string]) {
-            $normalized = $InputValue -replace ';', ";`n"
+              $normalized = $InputValue -replace ';', ";`n"
             return $normalized.TrimEnd("`n")
         }
 
         return $InputValue
+    }
+
+    $validScopes = @('Process','User','Machine')
+
+    if ($PSBoundParameters.ContainsKey('Var') -and $PSBoundParameters.ContainsKey('Scope')) {
+        $varLooksLikeScope = $Var -and ($validScopes | Where-Object { $_ -ieq $Var })
+        $scopeLooksLikeScope = $Scope -and ($validScopes | Where-Object { $_ -ieq $Scope })
+
+        if ($varLooksLikeScope -and -not $scopeLooksLikeScope) {
+            $temp = $Var
+            $Var = $Scope
+            $Scope = $temp
+        }
+    }
+
+    if ($Scope) {
+        $normalizedScope = ($validScopes | Where-Object { $_ -ieq $Scope } | Select-Object -First 1)
+        if (-not $normalizedScope) {
+            throw "Scope must be one of: $($validScopes -join ', ')."
+        }
+        $Scope = $normalizedScope
     }
 
     # If no arguments at all -> list every scope combined
@@ -77,6 +101,7 @@ envs - Environment variable helper
 
 USAGE:
     envs <Var> [Scope]                 Get variable at scope (default Scope=Process)
+    envs <Scope> [Var]                 Scope-first aliases (envs User Path)
     envs <Scope>                       List all variables for that scope (Process|User|Machine)
     envs                               List all variables for all scopes
 
@@ -93,6 +118,7 @@ SWITCHES:
 EXAMPLES:
     envs Path User                     Get user PATH
     envs User                          List all user variables
+    envs User Path                     Get user PATH using scope-first syntax
     envs                               List all variables (Process, User, Machine)
     envs TOOLS_HOME User 'C:\Tools' -Set -Refresh
     envs Path User 'C:\ExtraBin' -Append -Refresh
@@ -102,7 +128,8 @@ NOTES:
     - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
     - Append expects directories (for PATH) not executables.
     - -Refresh only needed for persistent scopes (User/Machine) to update current session.
-    - Listing returns objects; format/pipeline as desired.
+    - Interactive output auto-splits ';' separated values onto new lines for readability.
+    - Returned objects are PSCustomObjects, ready for further pipeline processing.
 '@ | Write-Host
                 return
         }
