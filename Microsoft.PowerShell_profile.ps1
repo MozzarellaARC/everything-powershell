@@ -1,4 +1,4 @@
-set-alias -name cc -value choco
+set-alias -name coc -value choco
 
 # Load opener functions
 . "$PSScriptRoot\everything_powershell\opwsh.ps1"
