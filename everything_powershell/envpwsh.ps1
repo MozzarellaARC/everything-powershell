@@ -230,7 +230,7 @@ EXAMPLES:
 NOTES:
     - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
     - Append expects directories (for PATH) not executables.
-    - -Set preserves existing values by appending when the variable already exists and errors on duplicates.
+    - -Set appends when the variable already exists and errors if the value/path already matches (raw or expanded).
     - -Refresh only needed for persistent scopes (User/Machine) to update current session.
     - Interactive output auto-splits ';' separated values onto new lines for readability.
     - Returned objects are PSCustomObjects, ready for further pipeline processing.
