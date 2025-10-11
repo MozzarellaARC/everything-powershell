@@ -95,13 +95,73 @@ function envs {
         if ([string]::IsNullOrEmpty($Candidate)) { return $false }
 
         $candidateNormalized = $Candidate.Trim()
+        $candidateInfo = Get-PathComparisonInfo -Value $candidateNormalized
+
         foreach ($entry in (Split-SemicolonValue -ValueToSplit $Current)) {
-            if ($entry.Equals($candidateNormalized, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
-            }
+            $entryInfo = Get-PathComparisonInfo -Value $entry
+
+            if ($entryInfo.Raw.Equals($candidateInfo.Raw, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+            if ($entryInfo.Expanded.Equals($candidateInfo.Raw, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+            if ($entryInfo.Raw.Equals($candidateInfo.Expanded, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+            if ($entryInfo.Expanded.Equals($candidateInfo.Expanded, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+            if ($entryInfo.Normalized.Equals($candidateInfo.Normalized, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
 
         return $false
+    }
+
+    function Throw-EnvError {
+        param(
+            [string]$Message,
+            [string]$ErrorId,
+            [object]$Target
+        )
+
+        $exception = [System.InvalidOperationException]::new($Message)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            $ErrorId,
+            [System.Management.Automation.ErrorCategory]::InvalidOperation,
+            $Target
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
+
+    function Get-PathComparisonInfo {
+        param([string]$Value)
+
+        $raw = ($Value ?? '').Trim().Trim('"')
+        $expanded = $raw
+        if ($null -ne $raw) {
+            $expanded = [Environment]::ExpandEnvironmentVariables($raw)
+        }
+
+        $normalized = $expanded
+        if (-not [string]::IsNullOrWhiteSpace($expanded)) {
+            try {
+                if ([System.IO.Path]::IsPathRooted($expanded)) {
+                    $normalized = [System.IO.Path]::GetFullPath($expanded)
+                }
+            } catch {
+                $normalized = $expanded
+            }
+        }
+
+        $normalizedClean = $normalized ?? ''
+        if ($normalizedClean) {
+            $root = $null
+            try { $root = [System.IO.Path]::GetPathRoot($normalizedClean) } catch { $root = $null }
+            $trimmed = $normalizedClean.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+            if (-not $root -or -not $trimmed.Equals($root.TrimEnd([System.IO.Path]::DirectorySeparatorChar), [System.StringComparison]::OrdinalIgnoreCase)) {
+                $normalizedClean = $trimmed
+            }
+        }
+
+        return [pscustomobject]@{
+            Raw        = $raw ?? ''
+            Expanded   = $expanded ?? ''
+            Normalized = $normalizedClean
+        }
     }
 
     $validScopes = @('Process','User','Machine')
@@ -202,7 +262,7 @@ NOTES:
             $incoming = $Value
             $existing = [Environment]::GetEnvironmentVariable($Var, $Scope)
             if (Test-ContainsSemicolonValue -Current $existing -Candidate $incoming) {
-                throw "Variable '$Var' at scope '$Scope' already contains value '$incoming'."
+                Throw-EnvError -Message "Variable '$Var' at scope '$Scope' already contains value '$incoming'." -ErrorId 'EnvVariableDuplicateValue' -Target $Var
             }
             $Value = if (-not [string]::IsNullOrEmpty($existing)) {
                 Join-SemicolonValue -Current $existing -Addition $incoming
@@ -217,7 +277,7 @@ NOTES:
             if ($Var -ine 'PATH') {
                 $pathCurrent = [Environment]::GetEnvironmentVariable('Path', $Scope)
                 if (Test-ContainsSemicolonValue -Current $pathCurrent -Candidate $incoming) {
-                    throw "PATH at scope '$Scope' already contains value '$incoming'."
+                    Throw-EnvError -Message "PATH at scope '$Scope' already contains value '$incoming'." -ErrorId 'EnvPathDuplicateValue' -Target 'Path'
                 }
                 $token = "%$Var%"
                 $shouldUpdatePath = $true
@@ -257,7 +317,7 @@ NOTES:
             if (-not $Var) { throw "-Append requires a variable name (first positional argument)." }
             $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
             if (Test-ContainsSemicolonValue -Current $current -Candidate $Value) {
-                throw "Variable '$Var' at scope '$Scope' already contains value '$Value'."
+                Throw-EnvError -Message "Variable '$Var' at scope '$Scope' already contains value '$Value'." -ErrorId 'EnvVariableDuplicateValue' -Target $Var
             }
             $new = Join-SemicolonValue -Current $current -Addition $Value
             [Environment]::SetEnvironmentVariable($Var, $new, $Scope)
