@@ -61,6 +61,49 @@ function envs {
         return $InputValue
     }
 
+    function Join-SemicolonValue {
+        param(
+            [string]$Current,
+            [string]$Addition
+        )
+
+        if ([string]::IsNullOrEmpty($Current)) { return $Addition }
+        if ([string]::IsNullOrEmpty($Addition)) { return $Current }
+
+        $separator = ';'
+        if ($Current.EndsWith($separator) -or $Addition.StartsWith($separator)) {
+            return "$Current$Addition"
+        }
+
+        return "$Current$separator$Addition"
+    }
+
+    function Split-SemicolonValue {
+        param([string]$ValueToSplit)
+
+        if ([string]::IsNullOrEmpty($ValueToSplit)) { return @() }
+
+        return ($ValueToSplit -split ';') | Where-Object { $_ -ne '' } | ForEach-Object { $_.Trim() }
+    }
+
+    function Test-ContainsSemicolonValue {
+        param(
+            [string]$Current,
+            [string]$Candidate
+        )
+
+        if ([string]::IsNullOrEmpty($Candidate)) { return $false }
+
+        $candidateNormalized = $Candidate.Trim()
+        foreach ($entry in (Split-SemicolonValue -ValueToSplit $Current)) {
+            if ($entry.Equals($candidateNormalized, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+
+        return $false
+    }
+
     $validScopes = @('Process','User','Machine')
 
     if ($PSBoundParameters.ContainsKey('Var') -and $PSBoundParameters.ContainsKey('Scope')) {
@@ -127,6 +170,7 @@ EXAMPLES:
 NOTES:
     - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
     - Append expects directories (for PATH) not executables.
+    - -Set preserves existing values by appending when the variable already exists and errors on duplicates.
     - -Refresh only needed for persistent scopes (User/Machine) to update current session.
     - Interactive output auto-splits ';' separated values onto new lines for readability.
     - Returned objects are PSCustomObjects, ready for further pipeline processing.
@@ -155,6 +199,42 @@ NOTES:
         if ($Set) {
             if (-not $Var) { throw "-Set requires a variable name (first positional argument)." }
             if (-not $PSBoundParameters.ContainsKey('Value')) { throw "-Set requires -Value (third positional argument)." }
+            $incoming = $Value
+            $existing = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            if (Test-ContainsSemicolonValue -Current $existing -Candidate $incoming) {
+                throw "Variable '$Var' at scope '$Scope' already contains value '$incoming'."
+            }
+            $Value = if (-not [string]::IsNullOrEmpty($existing)) {
+                Join-SemicolonValue -Current $existing -Addition $incoming
+            } else {
+                $incoming
+            }
+            # Validate PATH addition before making any changes
+            $pathCurrent = $null
+            $token = $null
+            $newPath = $null
+            $shouldUpdatePath = $false
+            if ($Var -ine 'PATH') {
+                $pathCurrent = [Environment]::GetEnvironmentVariable('Path', $Scope)
+                if (Test-ContainsSemicolonValue -Current $pathCurrent -Candidate $incoming) {
+                    throw "PATH at scope '$Scope' already contains value '$incoming'."
+                }
+                $token = "%$Var%"
+                $shouldUpdatePath = $true
+                $already = $false
+                if ($pathCurrent) {
+                    $parts = $pathCurrent -split ';'
+                    foreach ($p in $parts) {
+                        if ($p.Trim().ToLower() -eq $token.ToLower()) { $already = $true; break }
+                    }
+                }
+                if ($already) {
+                    $shouldUpdatePath = $false
+                } else {
+                    $newPath = if ([string]::IsNullOrEmpty($pathCurrent)) { $token } elseif ($pathCurrent.EndsWith(';')) { "$pathCurrent$token" } else { "$pathCurrent;$token" }
+                }
+            }
+
             # Set the variable itself first
             [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
             $didModify = $true
@@ -162,15 +242,7 @@ NOTES:
 
             # Now append a reference %Var% to PATH at same scope (if Var not PATH itself)
             if ($Var -ine 'PATH') {
-                $pathCurrent = [Environment]::GetEnvironmentVariable('Path', $Scope)
-                $token = "%$Var%"
-                $already = $false
-                if ($pathCurrent) {
-                    $parts = $pathCurrent -split ';'
-                    foreach ($p in $parts) { if ($p.Trim().ToLower() -eq $token.ToLower()) { $already = $true; break } }
-                }
-                if (-not $already) {
-                    $newPath = if ([string]::IsNullOrEmpty($pathCurrent)) { $token } elseif ($pathCurrent.EndsWith(';')) { "$pathCurrent$token" } else { "$pathCurrent;$token" }
+                if ($shouldUpdatePath -and $newPath) {
                     [Environment]::SetEnvironmentVariable('Path', $newPath, $Scope)
                     Write-Verbose "Appended $token to PATH at scope $Scope." 
                 } else {
@@ -184,16 +256,10 @@ NOTES:
             }
             if (-not $Var) { throw "-Append requires a variable name (first positional argument)." }
             $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
-            if ([string]::IsNullOrEmpty($current)) {
-                $new = $Value
-            } else {
-                $separator = ';'
-                if ($current.EndsWith($separator) -or $Value.StartsWith($separator)) {
-                    $new = "$current$Value"
-                } else {
-                    $new = "$current$separator$Value"
-                }
+            if (Test-ContainsSemicolonValue -Current $current -Candidate $Value) {
+                throw "Variable '$Var' at scope '$Scope' already contains value '$Value'."
             }
+            $new = Join-SemicolonValue -Current $current -Addition $Value
             [Environment]::SetEnvironmentVariable($Var, $new, $Scope)
             $didModify = $true
             $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
