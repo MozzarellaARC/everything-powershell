@@ -285,6 +285,20 @@ function envs {
 
     $validScopes = @('Process','User','Machine')
 
+    # Safeguard: Check if user typed 'clean' or 'merge' as a variable name instead of using the switch
+    if ($Var -and -not $Clean -and -not $Merge) {
+        if ($Var -ieq 'clean') {
+            Write-Host "Do you mean -Clean? Clean requires parameters: [Scope] and [Variable]." -ForegroundColor Yellow
+            Write-Host "Example: envs User Path -Clean" -ForegroundColor Cyan
+            return
+        }
+        if ($Var -ieq 'merge') {
+            Write-Host "Do you mean -Merge? Merge requires parameters: [Scope] and [Variable]." -ForegroundColor Yellow
+            Write-Host "Example: envs User Path -Merge" -ForegroundColor Cyan
+            return
+        }
+    }
+
     if ($PSBoundParameters.ContainsKey('Var') -and $PSBoundParameters.ContainsKey('Scope')) {
         $varLooksLikeScope = $Var -and ($validScopes | Where-Object { $_ -ieq $Var })
         $scopeLooksLikeScope = $Scope -and ($validScopes | Where-Object { $_ -ieq $Scope })
