@@ -14,6 +14,7 @@ function envs {
         [Parameter(Position=2)]
         [string]$Value,
 
+        [switch]$New,
         [switch]$Append,
         [switch]$Refresh,
         [switch]$Set,
@@ -299,6 +300,18 @@ function envs {
         }
     }
 
+    # Safeguard: If Value is provided, user must specify -New, -Append, or -Set
+    if ($PSBoundParameters.ContainsKey('Value')) {
+        if (-not $New -and -not $Append -and -not $Set) {
+            Write-Host "Error: When providing a Value, you must specify one of: -New, -Append, or -Set" -ForegroundColor Red
+            Write-Host "Examples:" -ForegroundColor Cyan
+            Write-Host "  envs MyVar User 'C:\Path' -New      # Create/overwrite variable" -ForegroundColor Gray
+            Write-Host "  envs Path User 'C:\Tools' -Append   # Append to existing variable" -ForegroundColor Gray
+            Write-Host "  envs JAVA_HOME User 'C:\Java' -Set  # Set variable and add %JAVA_HOME% to PATH" -ForegroundColor Gray
+            return
+        }
+    }
+
     if ($PSBoundParameters.ContainsKey('Var') -and $PSBoundParameters.ContainsKey('Scope')) {
         $varLooksLikeScope = $Var -and ($validScopes | Where-Object { $_ -ieq $Var })
         $scopeLooksLikeScope = $Scope -and ($validScopes | Where-Object { $_ -ieq $Scope })
@@ -341,13 +354,14 @@ USAGE:
     envs <Scope>                       List all variables for that scope (Process|User|Machine)
     envs                               List all variables for all scopes
 
-    envs <Var> <Scope> <Value>         Set variable
+    envs <Var> <Scope> <Value> -New    Create or overwrite variable
     envs <Var> <Scope> <Value> -Append Append literal value to existing variable (semicolon separator)
     envs <Var> <Scope> <Value> -Set    Set variable then append %Var% token to PATH at same scope
     envs <Var> <Scope> -Clean          Remove duplicate values from semicolon-separated variable
     envs <Var> <Scope> -Merge          Expand %VAR% references to actual values and delete referenced vars
 
 SWITCHES:
+    -New        Create or overwrite the variable with the provided Value
     -Append     Append provided Value to existing variable (adds ';' if needed)
     -Set        Set variable and add %Var% to PATH (if not already there)
     -Clean      Remove duplicate entries from variable (case-insensitive, normalized path comparison)
@@ -360,13 +374,16 @@ EXAMPLES:
     envs User                          List all user variables
     envs User Path                     Get user PATH using scope-first syntax
     envs                               List all variables (Process, User, Machine)
+    envs MY_VAR User 'C:\MyPath' -New -Refresh
     envs TOOLS_HOME User 'C:\Tools' -Set -Refresh
     envs Path User 'C:\ExtraBin' -Append -Refresh
-    envs MY_TEMP Process '123'         Set process-only variable
+    envs MY_TEMP Process '123' -New    Set process-only variable
     envs Path User -Clean -Refresh     Remove duplicate paths from user PATH
     envs Path User -Merge -Refresh     Expand %VAR% references and remove those variables
 
 NOTES:
+    - When providing a Value, you MUST specify -New, -Append, or -Set.
+    - Use -New to create or overwrite a variable with a new value.
     - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
     - Append expects directories (for PATH) not executables.
     - -Set appends when the variable already exists and errors if the value/path already matches (raw or expanded).
@@ -538,6 +555,7 @@ NOTES:
         }
         elseif ($PSBoundParameters.ContainsKey('Value')) {
             if (-not $Var) { throw "Setting a value requires a variable name (first positional argument)." }
+            # This handles -New switch: create or overwrite the variable
             [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
             $didModify = $true
             $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
