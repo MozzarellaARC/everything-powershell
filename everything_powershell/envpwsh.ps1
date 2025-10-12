@@ -9,7 +9,7 @@ function envs {
             param($commandName,$parameterName,$wordToComplete)
             'Process','User','Machine' | Where-Object { $_ -like "$wordToComplete*" }
         })]
-        [string]$Scope = 'Process',
+        [string]$Scope,
 
         [Parameter(Position=2)]
         [string]$Value,
@@ -323,6 +323,11 @@ function envs {
         }
     }
 
+    # Default Scope to 'Process' if not provided
+    if ([string]::IsNullOrEmpty($Scope)) {
+        $Scope = 'Process'
+    }
+
     if ($Scope) {
         $normalizedScope = ($validScopes | Where-Object { $_ -ieq $Scope } | Select-Object -First 1)
         if (-not $normalizedScope) {
@@ -548,8 +553,8 @@ NOTES:
             if (Test-ContainsSemicolonValue -Current $current -Candidate $Value) {
                 Throw-EnvError -Message "Variable '$Var' at scope '$Scope' already contains value '$Value'." -ErrorId 'EnvVariableDuplicateValue' -Target $Var
             }
-            $new = Join-SemicolonValue -Current $current -Addition $Value
-            [Environment]::SetEnvironmentVariable($Var, $new, $Scope)
+            $newValue = Join-SemicolonValue -Current $current -Addition $Value
+            [Environment]::SetEnvironmentVariable($Var, $newValue, $Scope)
             $didModify = $true
             $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
         }
