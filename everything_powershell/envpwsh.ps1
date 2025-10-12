@@ -209,7 +209,8 @@ function envs {
 
     function Remove-DuplicateValues {
         param(
-            [string]$ValueString
+            [string]$ValueString,
+            [ref]$RemovedDuplicates
         )
 
         if ([string]::IsNullOrEmpty($ValueString)) { return '' }
@@ -217,6 +218,7 @@ function envs {
         $parts = Split-SemicolonValue -ValueToSplit $ValueString
         $seen = @{}
         $unique = [System.Collections.Generic.List[string]]::new()
+        $duplicates = [System.Collections.Generic.List[string]]::new()
 
         foreach ($part in $parts) {
             $info = Get-PathComparisonInfo -Value $part
@@ -225,7 +227,13 @@ function envs {
             if (-not $seen.ContainsKey($key)) {
                 $seen[$key] = $true
                 $unique.Add($part)
+            } else {
+                $duplicates.Add($part)
             }
+        }
+
+        if ($null -ne $RemovedDuplicates) {
+            $RemovedDuplicates.Value = $duplicates.ToArray()
         }
 
         return ($unique -join ';')
@@ -385,15 +393,21 @@ NOTES:
                 return
             }
             
-            $cleaned = Remove-DuplicateValues -ValueString $current
+            $removedDuplicates = $null
+            $cleaned = Remove-DuplicateValues -ValueString $current -RemovedDuplicates ([ref]$removedDuplicates)
             
             if ($cleaned -eq $current) {
-                Write-Host "No duplicates found in '$Var' at scope '$Scope'."
+                Write-Host "$Scope $Var is clean! Skipping clean command." -ForegroundColor Green
                 $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
             } else {
                 [Environment]::SetEnvironmentVariable($Var, $cleaned, $Scope)
                 $didModify = $true
-                Write-Host "Removed duplicates from '$Var' at scope '$Scope'."
+                
+                # Show which values were cleaned
+                foreach ($duplicate in $removedDuplicates) {
+                    Write-Host "Removed duplicate: $duplicate" -ForegroundColor Yellow
+                }
+                
                 $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $cleaned
             }
         }
