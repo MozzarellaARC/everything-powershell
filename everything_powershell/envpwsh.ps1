@@ -17,6 +17,8 @@ function envs {
         [switch]$Append,
         [switch]$Refresh,
         [switch]$Set,
+        [switch]$Clean,
+        [switch]$Merge,
         [Alias('h','?')][switch]$Help
     )
 
@@ -25,6 +27,8 @@ function envs {
     # 2. -Set creates/updates variable Var with Value, then appends %Var% to PATH at same scope (if not already present).
     # 3. -Append (existing) appends literal Value to Var.
     # 4. -Refresh updates current process copy when modifying User/Machine.
+    # 5. -Clean removes duplicate values from a semicolon-separated variable.
+    # 6. -Merge expands all %VAR% references to actual values and optionally removes the referenced variables.
 
     function Get-AllScopeVars([string]$ListScope) {
         $target = [System.EnvironmentVariableTarget]::$ListScope
@@ -203,6 +207,74 @@ function envs {
         }
     }
 
+    function Remove-DuplicateValues {
+        param(
+            [string]$ValueString
+        )
+
+        if ([string]::IsNullOrEmpty($ValueString)) { return '' }
+
+        $parts = Split-SemicolonValue -ValueToSplit $ValueString
+        $seen = @{}
+        $unique = [System.Collections.Generic.List[string]]::new()
+
+        foreach ($part in $parts) {
+            $info = Get-PathComparisonInfo -Value $part
+            $key = $info.Normalized.ToLowerInvariant()
+
+            if (-not $seen.ContainsKey($key)) {
+                $seen[$key] = $true
+                $unique.Add($part)
+            }
+        }
+
+        return ($unique -join ';')
+    }
+
+    function Expand-VariableReferences {
+        param(
+            [string]$ValueString,
+            [string]$TargetScope,
+            [ref]$ReferencedVars
+        )
+
+        if ([string]::IsNullOrEmpty($ValueString)) { return '' }
+
+        $parts = Split-SemicolonValue -ValueToSplit $ValueString
+        $expanded = [System.Collections.Generic.List[string]]::new()
+        $varsFound = @{}
+
+        foreach ($part in $parts) {
+            # Check if this part contains %VARNAME% pattern
+            if ($part -match '%([^%]+)%') {
+                $varName = $matches[1]
+                
+                # Get the value of the referenced variable from the same scope
+                $varValue = [Environment]::GetEnvironmentVariable($varName, $TargetScope)
+                
+                if ($null -ne $varValue -and $varValue -ne '') {
+                    # Track this variable for potential deletion
+                    $varsFound[$varName] = $varValue
+                    
+                    # Expand the reference in this part
+                    $expandedPart = $part -replace "%$varName%", $varValue
+                    $expanded.Add($expandedPart)
+                } else {
+                    # Variable doesn't exist or is empty, keep the reference
+                    $expanded.Add($part)
+                }
+            } else {
+                $expanded.Add($part)
+            }
+        }
+
+        if ($null -ne $ReferencedVars) {
+            $ReferencedVars.Value = $varsFound
+        }
+
+        return ($expanded -join ';')
+    }
+
     $validScopes = @('Process','User','Machine')
 
     if ($PSBoundParameters.ContainsKey('Var') -and $PSBoundParameters.ContainsKey('Scope')) {
@@ -250,10 +322,14 @@ USAGE:
     envs <Var> <Scope> <Value>         Set variable
     envs <Var> <Scope> <Value> -Append Append literal value to existing variable (semicolon separator)
     envs <Var> <Scope> <Value> -Set    Set variable then append %Var% token to PATH at same scope
+    envs <Var> <Scope> -Clean          Remove duplicate values from semicolon-separated variable
+    envs <Var> <Scope> -Merge          Expand %VAR% references to actual values and delete referenced vars
 
 SWITCHES:
     -Append     Append provided Value to existing variable (adds ';' if needed)
     -Set        Set variable and add %Var% to PATH (if not already there)
+    -Clean      Remove duplicate entries from variable (case-insensitive, normalized path comparison)
+    -Merge      Expand all %VAR% references in variable to their actual values, then delete those vars
     -Refresh    After modifying User/Machine, rebuild process PATH (Machine;User) and load changed var
     -Help/-?    Show this help
 
@@ -265,6 +341,8 @@ EXAMPLES:
     envs TOOLS_HOME User 'C:\Tools' -Set -Refresh
     envs Path User 'C:\ExtraBin' -Append -Refresh
     envs MY_TEMP Process '123'         Set process-only variable
+    envs Path User -Clean -Refresh     Remove duplicate paths from user PATH
+    envs Path User -Merge -Refresh     Expand %VAR% references and remove those variables
 
 NOTES:
     - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
@@ -272,6 +350,9 @@ NOTES:
     - -Set appends when the variable already exists and errors if the value/path already matches (raw or expanded).
     - -Refresh only needed for persistent scopes (User/Machine) to update current session.
     - Interactive output auto-splits ';' separated values onto new lines for readability.
+    - Missing/invalid paths are displayed in red for easy identification.
+    - -Clean uses normalized path comparison to detect duplicates (e.g., C:\Tools\ = C:\Tools).
+    - -Merge expands references like %JAVA_HOME% and deletes JAVA_HOME from the same scope.
     - Returned objects are PSCustomObjects, ready for further pipeline processing.
 '@ | Write-Host
                 return
@@ -295,7 +376,60 @@ NOTES:
         $result = Get-AllScopeVars -ListScope ($Var ?? $Scope)
     }
     else {
-        if ($Set) {
+        if ($Clean) {
+            if (-not $Var) { throw "-Clean requires a variable name (first positional argument)." }
+            
+            $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            if ([string]::IsNullOrEmpty($current)) {
+                Write-Warning "Variable '$Var' at scope '$Scope' is empty or does not exist."
+                return
+            }
+            
+            $cleaned = Remove-DuplicateValues -ValueString $current
+            
+            if ($cleaned -eq $current) {
+                Write-Host "No duplicates found in '$Var' at scope '$Scope'."
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
+            } else {
+                [Environment]::SetEnvironmentVariable($Var, $cleaned, $Scope)
+                $didModify = $true
+                Write-Host "Removed duplicates from '$Var' at scope '$Scope'."
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $cleaned
+            }
+        }
+        elseif ($Merge) {
+            if (-not $Var) { throw "-Merge requires a variable name (first positional argument)." }
+            
+            $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            if ([string]::IsNullOrEmpty($current)) {
+                Write-Warning "Variable '$Var' at scope '$Scope' is empty or does not exist."
+                return
+            }
+            
+            $referencedVars = $null
+            $merged = Expand-VariableReferences -ValueString $current -TargetScope $Scope -ReferencedVars ([ref]$referencedVars)
+            
+            if ($merged -eq $current) {
+                Write-Host "No variable references found in '$Var' at scope '$Scope'."
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
+            } else {
+                # Update the variable with expanded values
+                [Environment]::SetEnvironmentVariable($Var, $merged, $Scope)
+                $didModify = $true
+                Write-Host "Merged variable references in '$Var' at scope '$Scope'."
+                
+                # Delete the referenced variables
+                if ($referencedVars -and $referencedVars.Count -gt 0) {
+                    foreach ($refVarName in $referencedVars.Keys) {
+                        Write-Host "Deleting referenced variable '$refVarName' from scope '$Scope'..."
+                        [Environment]::SetEnvironmentVariable($refVarName, $null, $Scope)
+                    }
+                }
+                
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $merged
+            }
+        }
+        elseif ($Set) {
             if (-not $Var) { throw "-Set requires a variable name (first positional argument)." }
             if (-not $PSBoundParameters.ContainsKey('Value')) { throw "-Set requires -Value (third positional argument)." }
             $incoming = $Value
