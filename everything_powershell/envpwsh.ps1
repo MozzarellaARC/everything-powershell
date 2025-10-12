@@ -253,9 +253,13 @@ function envs {
         $varsFound = @{}
 
         foreach ($part in $parts) {
-            # Check if this part contains %VARNAME% pattern
-            if ($part -match '%([^%]+)%') {
-                $varName = $matches[1]
+            $expandedPart = $part
+            
+            # Find all %VARNAME% patterns in this part
+            $matches = [regex]::Matches($part, '%([^%]+)%')
+            
+            foreach ($match in $matches) {
+                $varName = $match.Groups[1].Value
                 
                 # Get the value of the referenced variable from the same scope
                 $varValue = [Environment]::GetEnvironmentVariable($varName, $TargetScope)
@@ -265,15 +269,11 @@ function envs {
                     $varsFound[$varName] = $varValue
                     
                     # Expand the reference in this part
-                    $expandedPart = $part -replace "%$varName%", $varValue
-                    $expanded.Add($expandedPart)
-                } else {
-                    # Variable doesn't exist or is empty, keep the reference
-                    $expanded.Add($part)
+                    $expandedPart = $expandedPart -replace "%$([regex]::Escape($varName))%", $varValue
                 }
-            } else {
-                $expanded.Add($part)
             }
+            
+            $expanded.Add($expandedPart)
         }
 
         if ($null -ne $ReferencedVars) {
@@ -435,8 +435,19 @@ NOTES:
                 # Delete the referenced variables
                 if ($referencedVars -and $referencedVars.Count -gt 0) {
                     foreach ($refVarName in $referencedVars.Keys) {
-                        Write-Host "Deleting referenced variable '$refVarName' from scope '$Scope'..."
-                        [Environment]::SetEnvironmentVariable($refVarName, $null, $Scope)
+                        Write-Host "Deleting referenced variable '$refVarName' from scope '$Scope'..." -ForegroundColor Cyan
+                        
+                        # Actually delete the variable based on scope
+                        if ($Scope -eq 'User') {
+                            Remove-ItemProperty -Path "HKCU:\Environment" -Name $refVarName -ErrorAction SilentlyContinue
+                        }
+                        elseif ($Scope -eq 'Machine') {
+                            Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" -Name $refVarName -ErrorAction SilentlyContinue
+                        }
+                        else {
+                            # Process scope - just remove from environment
+                            Remove-Item -Path "Env:$refVarName" -ErrorAction SilentlyContinue
+                        }
                     }
                 }
                 
