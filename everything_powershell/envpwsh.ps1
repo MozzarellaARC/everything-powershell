@@ -54,7 +54,46 @@ function envs {
         if ($null -eq $InputValue) { return $null }
 
         if ($InputValue -is [string]) {
-              $normalized = $InputValue -replace ';', ";`n"
+            # Split by semicolon and check if each path exists
+            $parts = $InputValue -split ';'
+            $coloredParts = @()
+            
+            foreach ($part in $parts) {
+                if ([string]::IsNullOrWhiteSpace($part)) {
+                    continue
+                }
+                
+                # Expand environment variables in the path
+                $expandedPath = [Environment]::ExpandEnvironmentVariables($part.Trim())
+                
+                # Check if this looks like a file system path
+                $isPath = $false
+                try {
+                    $isPath = [System.IO.Path]::IsPathRooted($expandedPath) -or 
+                              $expandedPath -match '^[a-zA-Z]:\\' -or 
+                              $expandedPath -match '^\\\\' -or
+                              (Test-Path -LiteralPath $expandedPath -ErrorAction SilentlyContinue)
+                } catch {
+                    $isPath = $false
+                }
+                
+                # Color the path red if it looks like a path but doesn't exist
+                if ($isPath) {
+                    $exists = Test-Path -LiteralPath $expandedPath -ErrorAction SilentlyContinue
+                    if (-not $exists) {
+                        # Use ANSI escape codes for red text
+                        $coloredPart = "$([char]27)[91m$part$([char]27)[0m"
+                        $coloredParts += $coloredPart
+                    } else {
+                        $coloredParts += $part
+                    }
+                } else {
+                    # Not a path, just add it as-is
+                    $coloredParts += $part
+                }
+            }
+            
+            $normalized = ($coloredParts -join ";`n")
             return $normalized.TrimEnd("`n")
         }
 
