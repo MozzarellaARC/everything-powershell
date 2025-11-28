@@ -1,5 +1,7 @@
 set-alias -name coc -value choco
 set-alias -name python -value python3.14
+set-alias -name godot -value Godot_v4.6-dev4_win64
+set-alias -name godot-cli Godot_v4.6-dev4_win64_console
 
 
 if ($PSStyle.OutputRendering -ne "ANSI")
