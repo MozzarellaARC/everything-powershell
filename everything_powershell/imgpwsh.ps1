@@ -64,7 +64,7 @@ function imageto {
 		$unsupportedSources = $files | Where-Object { ($_.Extension.TrimStart('.').ToLower()) -notin $basicDecodable }
 		if ($unsupportedSources) {
 			$preview = ($unsupportedSources | Select-Object -First 5 -ExpandProperty Name) -join ', '
-			Write-Warning "Skipping unsupported source formats without ImageMagick: $preview" 
+			Write-Warning "Skipping unsupported source formats without ImageMagick: $preview"
 			$files = $files | Where-Object { ($_.Extension.TrimStart('.').ToLower()) -in $basicDecodable }
 			if (-not $files) { Write-Warning 'No convertible images with current fallback.'; return }
 		}
@@ -139,4 +139,3 @@ if ($MyInvocation.InvocationName -ne '.') {
 		imageto @args
 	}
 }
-

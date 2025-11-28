@@ -139,4 +139,3 @@ Set-Alias -Name cdx -Value Invoke-Cdx -Scope Global -Option AllScope -Force
 if ($MyInvocation.MyCommand.Module) {
 	Export-ModuleMember -Function Invoke-Cdx -Alias cdx 2>$null
 }
-

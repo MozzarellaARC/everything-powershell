@@ -10,15 +10,15 @@ function Get-Apps {
         return $Script:CachedApps
     }
     if (-not $Script:ProgressOnly) { Write-Host "Scanning Start Menu applications..." -ForegroundColor Cyan }
-    
+
     $paths = @(
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
         "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
     )
-    
+
     $apps = @()
     $seenTargets = @{}
-    
+
     $totalShortcutCount = 0
     $collected = 0
     # Pre-count to have a determinate progress bar
@@ -133,7 +133,7 @@ function Search-Executables {
 # Window management for bringing apps to foreground
 function Invoke-BringToForeground {
     param([string]$AppName, [string]$TargetPath)
-    
+
     if (-not ([System.Management.Automation.PSTypeName]'Win32WindowManager').Type) {
         Add-Type @"
 using System;
@@ -142,28 +142,28 @@ using System.Runtime.InteropServices;
 public class Win32WindowManager {
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
-    
+
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    
+
     [DllImport("user32.dll")]
     public static extern bool IsIconic(IntPtr hWnd);
-    
+
     public const int SW_RESTORE = 9;
     public const int SW_SHOW = 5;
 }
 "@
     }
-    
+
     # Find running processes
     $processes = @()
-    
+
     # Try by target executable name
     if ($TargetPath) {
         $exeName = [System.IO.Path]::GetFileNameWithoutExtension($TargetPath)
         $processes += Get-Process -Name $exeName -ErrorAction SilentlyContinue
     }
-    
+
     # Common process mappings
     $appNameLower = $AppName.ToLower()
     $commonProcessNames = @{
@@ -174,7 +174,7 @@ public class Win32WindowManager {
         'edge' = @('msedge')
         'notepad++' = @('notepad++')
     }
-    
+
     foreach ($key in $commonProcessNames.Keys) {
         if ($appNameLower -like "*$key*") {
             foreach ($procName in $commonProcessNames[$key]) {
@@ -182,13 +182,13 @@ public class Win32WindowManager {
             }
         }
     }
-    
+
     # Fuzzy fallback: if no processes found, search by partial app name match
     if ($processes.Count -eq 0) {
         $allProcesses = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "*$AppName*" -or $_.MainWindowTitle -like "*$AppName*" }
         $processes += $allProcesses
     }
-    
+
     # Try to bring window to foreground
     foreach ($proc in ($processes | Sort-Object Id -Unique)) {
         if ($proc.MainWindowHandle -ne 0) {
@@ -204,7 +204,7 @@ public class Win32WindowManager {
             }
         }
     }
-    
+
     return $false
 }
 
@@ -214,7 +214,7 @@ function open {
         [string[]]$Name,
         [switch]$Dir
     )
-    
+
     # App aliases for faster typing
     $appAliases = @{
         'vsc' = 'Visual Studio Code'
@@ -225,13 +225,13 @@ function open {
         'ppt' = 'PowerPoint'
         'ps' = 'PowerShell'
     }
-    
+
     $userInput = ($Name -join ' ')
     if ([string]::IsNullOrWhiteSpace($userInput)) {
         Write-Host "No app name provided." -ForegroundColor Yellow
         return
     }
-    
+
     # Check for alias
     $searchInput = $userInput
     $userInputLower = $userInput.ToLower()
@@ -239,19 +239,19 @@ function open {
         $searchInput = $appAliases[$userInputLower]
         if (-not $Script:ProgressOnly) { Write-Host "Using alias: '$userInput' -> '$searchInput'" -ForegroundColor Gray }
     }
-    
+
     # Get Start Menu apps
     if (-not $Script:ProgressOnly) { Write-Host "Searching for applications: $searchInput" -ForegroundColor Cyan }
     $apps = Get-Apps
     $appMatches = @($apps | Where-Object { $_.Name -like "*$searchInput*" })
-    
+
     # If no Start Menu matches, run fd executable search directly
     if ($appMatches.Count -eq 0) {
         if (-not $Script:ProgressOnly) { Write-Host "No Start Menu matches found, searching executables..." -ForegroundColor Yellow }
     $exeResults = @(Search-Executables -Query $userInput)
-        
+
         if (-not $exeResults -or ($exeResults | Measure-Object).Count -eq 0) { Write-Host "No apps found for: $userInput" -ForegroundColor Red; return }
-        
+
         if (($exeResults | Measure-Object).Count -eq 1) {
             $exeToLaunch = $exeResults[0]
         } else {
@@ -268,7 +268,7 @@ function open {
             }
             $exeToLaunch = $exeResults[[int]$choice - 1]
         }
-        
+
         if ($Dir) {
             $exeDir = Split-Path $exeToLaunch -Parent
             if (-not $Script:ProgressOnly) { Write-Host "Opening directory: $exeDir" -ForegroundColor Green }
@@ -281,7 +281,7 @@ function open {
         }
         return
     }
-    
+
     # Handle Start Menu app matches
     if ($appMatches.Count -eq 1) {
         $appSelected = $appMatches[0]
@@ -289,12 +289,12 @@ function open {
         Write-Host "`nAvailable matches:"
         $maxNameLen = ($appMatches | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
         Write-Host ("    {0,-$maxNameLen}  {1}" -f 'Name', 'Target Path')
-        
+
         for ($i = 0; $i -lt $appMatches.Count; $i++) {
             $app = $appMatches[$i]
             Write-Host ("  [{0}] {1,-$maxNameLen}  {2}" -f ($i + 1), $app.Name, $app.TargetPath)
         }
-        
+
         $choice = Read-Host "Enter number (1-$($appMatches.Count)) or 'n' to cancel"
         if ($choice -match '^(n|no)$') { return }
         if ($choice -notmatch '^[0-9]+$' -or [int]$choice -lt 1 -or [int]$choice -gt $appMatches.Count) {
@@ -303,7 +303,7 @@ function open {
         }
         $appSelected = $appMatches[[int]$choice - 1]
     }
-    
+
     if ($Dir) {
         # Directory mode: open containing directory of selected shortcut target
         $target = $appSelected.TargetPath

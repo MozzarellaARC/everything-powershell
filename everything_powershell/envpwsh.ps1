@@ -62,26 +62,26 @@ function envs {
             # Split by semicolon and check if each path exists
             $parts = $InputValue -split ';'
             $coloredParts = @()
-            
+
             foreach ($part in $parts) {
                 if ([string]::IsNullOrWhiteSpace($part)) {
                     continue
                 }
-                
+
                 # Expand environment variables in the path
                 $expandedPath = [Environment]::ExpandEnvironmentVariables($part.Trim())
-                
+
                 # Check if this looks like a file system path
                 $isPath = $false
                 try {
-                    $isPath = [System.IO.Path]::IsPathRooted($expandedPath) -or 
-                              $expandedPath -match '^[a-zA-Z]:\\' -or 
+                    $isPath = [System.IO.Path]::IsPathRooted($expandedPath) -or
+                              $expandedPath -match '^[a-zA-Z]:\\' -or
                               $expandedPath -match '^\\\\' -or
                               (Test-Path -LiteralPath $expandedPath -ErrorAction SilentlyContinue)
                 } catch {
                     $isPath = $false
                 }
-                
+
                 # Color the path red if it looks like a path but doesn't exist
                 if ($isPath) {
                     $exists = Test-Path -LiteralPath $expandedPath -ErrorAction SilentlyContinue
@@ -97,7 +97,7 @@ function envs {
                     $coloredParts += $part
                 }
             }
-            
+
             $normalized = ($coloredParts -join ";`n")
             return $normalized.TrimEnd("`n")
         }
@@ -255,25 +255,25 @@ function envs {
 
         foreach ($part in $parts) {
             $expandedPart = $part
-            
+
             # Find all %VARNAME% patterns in this part
             $matches = [regex]::Matches($part, '%([^%]+)%')
-            
+
             foreach ($match in $matches) {
                 $varName = $match.Groups[1].Value
-                
+
                 # Get the value of the referenced variable from the same scope
                 $varValue = [Environment]::GetEnvironmentVariable($varName, $TargetScope)
-                
+
                 if ($null -ne $varValue -and $varValue -ne '') {
                     # Track this variable for potential deletion
                     $varsFound[$varName] = $varValue
-                    
+
                     # Expand the reference in this part
                     $expandedPart = $expandedPart -replace "%$([regex]::Escape($varName))%", $varValue
                 }
             }
-            
+
             $expanded.Add($expandedPart)
         }
 
@@ -422,43 +422,43 @@ NOTES:
     else {
         if ($Clean) {
             if (-not $Var) { throw "-Clean requires a variable name (first positional argument)." }
-            
+
             $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
             if ([string]::IsNullOrEmpty($current)) {
                 Write-Warning "Variable '$Var' at scope '$Scope' is empty or does not exist."
                 return
             }
-            
+
             $removedDuplicates = $null
             $cleaned = Remove-DuplicateValues -ValueString $current -RemovedDuplicates ([ref]$removedDuplicates)
-            
+
             if ($cleaned -eq $current) {
                 Write-Host "$Scope $Var is clean! Skipping clean command." -ForegroundColor Green
                 $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
             } else {
                 [Environment]::SetEnvironmentVariable($Var, $cleaned, $Scope)
                 $didModify = $true
-                
+
                 # Show which values were cleaned
                 foreach ($duplicate in $removedDuplicates) {
                     Write-Host "Removed duplicate: $duplicate" -ForegroundColor Yellow
                 }
-                
+
                 $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $cleaned
             }
         }
         elseif ($Merge) {
             if (-not $Var) { throw "-Merge requires a variable name (first positional argument)." }
-            
+
             $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
             if ([string]::IsNullOrEmpty($current)) {
                 Write-Warning "Variable '$Var' at scope '$Scope' is empty or does not exist."
                 return
             }
-            
+
             $referencedVars = $null
             $merged = Expand-VariableReferences -ValueString $current -TargetScope $Scope -ReferencedVars ([ref]$referencedVars)
-            
+
             if ($merged -eq $current) {
                 Write-Host "No variable references found in '$Var' at scope '$Scope'."
                 $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
@@ -467,12 +467,12 @@ NOTES:
                 [Environment]::SetEnvironmentVariable($Var, $merged, $Scope)
                 $didModify = $true
                 Write-Host "Merged variable references in '$Var' at scope '$Scope'."
-                
+
                 # Delete the referenced variables
                 if ($referencedVars -and $referencedVars.Count -gt 0) {
                     foreach ($refVarName in $referencedVars.Keys) {
                         Write-Host "Deleting referenced variable '$refVarName' from scope '$Scope'..." -ForegroundColor Cyan
-                        
+
                         # Actually delete the variable based on scope
                         if ($Scope -eq 'User') {
                             Remove-ItemProperty -Path "HKCU:\Environment" -Name $refVarName -ErrorAction SilentlyContinue
@@ -486,7 +486,7 @@ NOTES:
                         }
                     }
                 }
-                
+
                 $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $merged
             }
         }
@@ -538,7 +538,7 @@ NOTES:
             if ($Var -ine 'PATH') {
                 if ($shouldUpdatePath -and $newPath) {
                     [Environment]::SetEnvironmentVariable('Path', $newPath, $Scope)
-                    Write-Verbose "Appended $token to PATH at scope $Scope." 
+                    Write-Verbose "Appended $token to PATH at scope $Scope."
                 } else {
                     Write-Verbose "$token already present in PATH at scope $Scope."
                 }
