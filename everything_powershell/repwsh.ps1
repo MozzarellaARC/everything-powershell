@@ -10,81 +10,56 @@ function REPWSH-Organization {
         Safe for case-only renames on Windows.
     #>
 
-    [CmdletBinding(DefaultParameterSetName='Help')]
+    [CmdletBinding(DefaultParameterSetName='Rename')]
     param (
-        [Parameter(ParameterSetName='Snake', Mandatory=$true)]
-        [switch]$Snake,
+        [Parameter(Position=0, ParameterSetName='Rename')]
+        [ValidateSet('snake', 'screaming', 'camel', 'title', 'kebab', 'pascal')]
+        [string]$Case,
 
-        [Parameter(ParameterSetName='ScreamingSnake', Mandatory=$true)]
-        [switch]$ScreamingSnake,
-
-        [Parameter(ParameterSetName='Camel', Mandatory=$true)]
-        [switch]$Camel,
-
-        [Parameter(ParameterSetName='Title', Mandatory=$true)]
-        [switch]$Title,
-
-        [Parameter(ParameterSetName='Kebab', Mandatory=$true)]
-        [switch]$Kebab,
-
-        [Parameter(ParameterSetName='Pascal', Mandatory=$true)]
-        [switch]$Pascal,
-
-        [Parameter(ParameterSetName='Snake')]
-        [Parameter(ParameterSetName='ScreamingSnake')]
-        [Parameter(ParameterSetName='Camel')]
-        [Parameter(ParameterSetName='Title')]
-        [Parameter(ParameterSetName='Kebab')]
-        [Parameter(ParameterSetName='Pascal')]
+        [Parameter(ParameterSetName='Rename')]
         [switch]$Dir,
 
         [Parameter(ParameterSetName='Help')]
         [switch]$Help
     )
 
-    if ($Help) {
+    if ($Help -or -not $Case) {
         Write-Host "`nREPWSH-Organization - File/Folder Renaming Tool" -ForegroundColor Cyan
         Write-Host "=" * 50 -ForegroundColor Cyan
         Write-Host "`nDESCRIPTION:" -ForegroundColor Yellow
         Write-Host "  Renames files or folders in the current directory to different naming conventions."
         Write-Host "  Converts separators (spaces, dashes, etc.) into underscores, camelCase, etc."
         Write-Host "`nPARAMETERS:" -ForegroundColor Yellow
-        Write-Host "  -Snake              Convert to snake_case (lowercase with underscores)"
-        Write-Host "  -ScreamingSnake     Convert to SCREAMING_SNAKE_CASE (uppercase with underscores)"
-        Write-Host "  -Camel              Convert to camelCase"
-        Write-Host "  -Title              Convert to Title Case (spaces between words)"
-        Write-Host "  -Kebab              Convert to kebab-case (lowercase with dashes)"
-        Write-Host "  -Pascal             Convert to PascalCase (no separators, capitalized words)"
+        Write-Host "  snake               Convert to snake_case (lowercase with underscores)"
+        Write-Host "  screaming           Convert to SCREAMING_SNAKE_CASE (uppercase with underscores)"
+        Write-Host "  camel               Convert to camelCase"
+        Write-Host "  title               Convert to Title Case (spaces between words)"
+        Write-Host "  kebab               Convert to kebab-case (lowercase with dashes)"
+        Write-Host "  pascal              Convert to PascalCase (no separators, capitalized words)"
         Write-Host "  -Dir                Apply to directories instead of files"
         Write-Host "  -Help               Display this help message"
         Write-Host "`nEXAMPLES:" -ForegroundColor Yellow
         Write-Host "  # Convert files with spaces to snake_case:"
-        Write-Host "  rep -Snake          # 'My Document.txt' -> 'my_document.txt'"
+        Write-Host "  rep snake           # 'My Document.txt' -> 'my_document.txt'"
         Write-Host ""
         Write-Host "  # Convert mixed separators to SCREAMING_SNAKE_CASE:"
-        Write-Host "  rep -ScreamingSnake # 'user-data_file.json' -> 'USER_DATA_FILE.JSON'"
+        Write-Host "  rep screaming       # 'user-data_file.json' -> 'USER_DATA_FILE.JSON'"
         Write-Host ""
         Write-Host "  # Convert to camelCase (good for JS/web files):"
-        Write-Host "  rep -Camel          # 'header-component.js' -> 'headerComponent.js'"
+        Write-Host "  rep camel           # 'header-component.js' -> 'headerComponent.js'"
         Write-Host ""
         Write-Host "  # Convert to Title Case (human readable):"
-        Write-Host "  rep -Title          # 'project_notes.md' -> 'Project Notes.md'"
+        Write-Host "  rep title           # 'project_notes.md' -> 'Project Notes.md'"
         Write-Host ""
         Write-Host "  # Convert to kebab-case (web-friendly):"
-        Write-Host "  rep -Kebab          # 'UserProfile.css' -> 'user-profile.css'"
+        Write-Host "  rep kebab           # 'UserProfile.css' -> 'user-profile.css'"
         Write-Host ""
         Write-Host "  # Convert to PascalCase (class names):"
-        Write-Host "  rep -Pascal         # 'api_helper.py' -> 'ApiHelper.py'"
+        Write-Host "  rep pascal          # 'api_helper.py' -> 'ApiHelper.py'"
         Write-Host ""
         Write-Host "  # Rename directories instead of files:"
-        Write-Host "  rep -Snake -Dir     # Rename folders to snake_case"
+        Write-Host "  rep snake -Dir      # Rename folders to snake_case"
         Write-Host ""
-        return
-    }
-
-    if (-not $Snake -and -not $ScreamingSnake -and -not $Camel -and -not $Title -and -not $Kebab -and -not $Pascal) {
-        Write-Error "Please specify either -Snake, -ScreamingSnake, -Camel, -Title, -Kebab, or -Pascal parameter"
-        Write-Host "Use -Help for usage information" -ForegroundColor Cyan
         return
     }
 
@@ -172,18 +147,25 @@ function REPWSH-Organization {
 
     foreach ($item in $items) {
         $oldName = $item.Name
-        $newName = if ($Snake) {
-            ConvertTo-SimpleSnake -InputString $oldName -Screaming:$false
-        } elseif ($ScreamingSnake) {
-            ConvertTo-SimpleSnake -InputString $oldName -Screaming:$true
-        } elseif ($Camel) {
-            ConvertTo-SimpleCamel -InputString $oldName
-        } elseif ($Title) {
-            ConvertTo-TitleCase -InputString $oldName
-        } elseif ($Kebab) {
-            ConvertTo-KebabCase -InputString $oldName
-        } else {
-            ConvertTo-PascalCase -InputString $oldName
+        $newName = switch ($Case.ToLower()) {
+            'snake' {
+                ConvertTo-SimpleSnake -InputString $oldName -Screaming:$false
+            }
+            'screaming' {
+                ConvertTo-SimpleSnake -InputString $oldName -Screaming:$true
+            }
+            'camel' {
+                ConvertTo-SimpleCamel -InputString $oldName
+            }
+            'title' {
+                ConvertTo-TitleCase -InputString $oldName
+            }
+            'kebab' {
+                ConvertTo-KebabCase -InputString $oldName
+            }
+            'pascal' {
+                ConvertTo-PascalCase -InputString $oldName
+            }
         }
 
         if ($oldName -ceq $newName) {
