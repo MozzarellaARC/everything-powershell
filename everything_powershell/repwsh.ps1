@@ -13,7 +13,7 @@ function REPWSH-Organization {
     [CmdletBinding(DefaultParameterSetName='Rename')]
     param (
         [Parameter(Position=0, ParameterSetName='Rename')]
-        [ValidateSet('snake', 'screaming', 'camel', 'title', 'kebab', 'pascal')]
+        [ValidateSet('snake', 'screaming', 'camel', 'title', 'kebab', 'pascal', 'normal')]
         [string]$Case,
 
         [Parameter(ParameterSetName='Rename')]
@@ -36,6 +36,7 @@ function REPWSH-Organization {
         Write-Host "  title               Convert to Title Case (spaces between words)"
         Write-Host "  kebab               Convert to kebab-case (lowercase with dashes)"
         Write-Host "  pascal              Convert to PascalCase (no separators, capitalized words)"
+        Write-Host "  normal              Convert to Normal case (spaces with capitalized words)"
         Write-Host "  -Dir                Apply to directories instead of files"
         Write-Host "  -Help               Display this help message"
         Write-Host "`nEXAMPLES:" -ForegroundColor Yellow
@@ -56,6 +57,9 @@ function REPWSH-Organization {
         Write-Host ""
         Write-Host "  # Convert to PascalCase (class names):"
         Write-Host "  rep pascal          # 'api_helper.py' -> 'ApiHelper.py'"
+        Write-Host ""
+        Write-Host "  # Convert to Normal case (natural spacing):"
+        Write-Host "  rep normal          # 'reference-image' -> 'Reference Image'"
         Write-Host ""
         Write-Host "  # Rename directories instead of files:"
         Write-Host "  rep snake -Dir      # Rename folders to snake_case"
@@ -135,6 +139,22 @@ function REPWSH-Organization {
         return $result + $extension.ToLower()
     }
 
+    function ConvertTo-NormalCase {
+        param([string]$InputString)
+        $extension = [System.IO.Path]::GetExtension($InputString)
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($InputString)
+
+        $words = @($name -split '[^a-zA-Z0-9]+' | Where-Object { $_ })
+        if ($words.Count -eq 0) { return $InputString }
+
+        # Capitalize first letter of every word
+        $result = ($words | ForEach-Object {
+            $_.Substring(0,1).ToUpper() + $_.Substring(1).ToLower()
+        }) -join ' '
+
+        return $result + $extension.ToLower()
+    }
+
     # Select files or directories depending on flag
     $items = if ($Dir) {
         Get-ChildItem -Directory
@@ -165,6 +185,9 @@ function REPWSH-Organization {
             }
             'pascal' {
                 ConvertTo-PascalCase -InputString $oldName
+            }
+            'normal' {
+                ConvertTo-NormalCase -InputString $oldName
             }
         }
 
