@@ -12,25 +12,25 @@ if ($PSStyle.OutputRendering -ne "ANSI")
 
 
 # Load opener functions
-. "$PSScriptRoot\everything_powershell\opwsh.ps1"
+. "$PSScriptRoot\scripts\opwsh.ps1"
 
 # Load Everything SDK wrapper
-. "$PSScriptRoot\everything_powershell\epwsh.ps1"
+. "$PSScriptRoot\scripts\epwsh.ps1"
 
 # Load ImageTools functions
-. "$PSScriptRoot\everything_powershell\imgpwsh.ps1"
+. "$PSScriptRoot\scripts\imgpwsh.ps1"
 
 # Auto cd to the foreground Windows Explorer folder
-. "$PSScriptRoot\everything_powershell\cdxpwsh.ps1"
+. "$PSScriptRoot\scripts\cdxpwsh.ps1"
 
 # Load Environment Variable functions
-. "$PSScriptRoot\everything_powershell\envpwsh.ps1"
+. "$PSScriptRoot\scripts\envpwsh.ps1"
 
 # Load Context Menu Override function
-. "$PSScriptRoot\everything_powershell\winapi_override.ps1"
+. "$PSScriptRoot\scripts\winapi_override.ps1"
 
 # Initialize Headless Blender
-. "$PSScriptRoot\everything_powershell\init_pwsh.ps1"
+. "$PSScriptRoot\scripts\init_pwsh.ps1"
 
 # Batch Organization
-. "$PSScriptRoot\everything_powershell\repwsh.ps1"
+. "$PSScriptRoot\scripts\repwsh.ps1"
