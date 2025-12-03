@@ -55,11 +55,29 @@ git clone https://github.com/MozzarellaARC/everything-powershell.git .
 If you already have your own `Microsoft.PowerShell_profile.ps1`, copy or merge the dot‑sourcing lines:
 
 ```powershell
-. "$PSScriptRoot\everything_powershell\opwsh.ps1"
-. "$PSScriptRoot\everything_powershell\epwsh.ps1"
-. "$PSScriptRoot\everything_powershell\imgpwsh.ps1"
-. "$PSScriptRoot\everything_powershell\qpwsh.ps1"
-. "$PSScriptRoot\everything_powershell\envpwsh.ps1"
+# Load opener functions
+. "$PSScriptRoot\scripts\opwsh.ps1"
+
+# Load Everything SDK wrapper
+. "$PSScriptRoot\scripts\epwsh.ps1"
+
+# Load ImageTools functions
+. "$PSScriptRoot\scripts\imgpwsh.ps1"
+
+# Auto cd to the foreground Windows Explorer folder
+. "$PSScriptRoot\scripts\cdxpwsh.ps1"
+
+# Load Environment Variable functions
+. "$PSScriptRoot\scripts\envpwsh.ps1"
+
+# Load Context Menu Override function
+. "$PSScriptRoot\scripts\winapi_override.ps1"
+
+# Initialize Headless Blender
+. "$PSScriptRoot\scripts\init_pwsh.ps1"
+
+# Batch Organization
+. "$PSScriptRoot\scripts\repwsh.ps1"
 ```
 
 ### Required Dependency
@@ -180,6 +198,3 @@ Guiding principles for additions:
 
 ## 9. License
 See `LICENSE`.
-
----
-Happy hacking. If this saves you a few seconds each day, mission accomplished. ❤️
