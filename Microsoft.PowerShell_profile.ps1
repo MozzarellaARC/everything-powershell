@@ -3,6 +3,8 @@ set-alias -name coc -value choco
 set-alias -name godot -value Godot_v4.6-dev4_win64
 set-alias -name godot-cli -value Godot_v4.6-dev4_win64_console
 set-alias -name imgto -value imageto
+set-alias -name ff -value firefox
+set-alias -name img -value magick
 
 
 if ($PSStyle.OutputRendering -ne "ANSI")
@@ -12,25 +14,25 @@ if ($PSStyle.OutputRendering -ne "ANSI")
 
 
 # Load opener functions
-. "$PSScriptRoot\scripts\opwsh.ps1"
+. "$PSScriptRoot\scripts\OPwsh.ps1"
 
 # Load Everything SDK wrapper
-. "$PSScriptRoot\scripts\epwsh.ps1"
+. "$PSScriptRoot\scripts\EPwsh.ps1"
 
 # Load ImageTools functions
-. "$PSScriptRoot\scripts\imgpwsh.ps1"
+. "$PSScriptRoot\scripts\ImgPwsh.ps1"
 
 # Auto cd to the foreground Windows Explorer folder
-. "$PSScriptRoot\scripts\cdxpwsh.ps1"
+. "$PSScriptRoot\scripts\CdxPwsh.ps1"
 
 # Load Environment Variable functions
-. "$PSScriptRoot\scripts\envpwsh.ps1"
+. "$PSScriptRoot\scripts\EnvPwsh.ps1"
 
 # Load Context Menu Override function
-. "$PSScriptRoot\scripts\winapi_override.ps1"
+. "$PSScriptRoot\scripts\WinApiOverride.ps1"
 
 # Initialize Headless Blender
-. "$PSScriptRoot\scripts\init_pwsh.ps1"
+. "$PSScriptRoot\scripts\InitPwsh.ps1"
 
 # Batch Organization
-. "$PSScriptRoot\scripts\repwsh.ps1"
+. "$PSScriptRoot\scripts\RePwsh.ps1"
