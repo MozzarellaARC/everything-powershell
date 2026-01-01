@@ -8,6 +8,8 @@ param(
     [switch]$Recursive,
     [switch]$Shuffle,
     [string]$FileTypes = "*.mp3,*.flac,*.wav,*.m4a,*.ogg,*.wma,*.aac,*.opus,*.mp4,*.mkv,*.avi,*.webm,*.mov",
+    [switch]$Loop,
+    [switch]$All,
     [switch]$Help
 )
 
@@ -31,8 +33,12 @@ function Show-Help {
     Write-Host "      Shuffle the file list before displaying"
     Write-Host "`n  -FileTypes <extensions>" -ForegroundColor Green
     Write-Host "      Comma-separated list of file extensions to search for"
-    Write-Host "      (default: *.mp3,*.flac,*.wav,*.m4a,*.ogg,*.wma,*.aac,*.opus)"
-    Write-Host "`n  -Help" -ForegroundColor Green
+    Write-Host "      (default: *.mp3,*.flac,*.wav,*.m4a,*.ogg,*.wma,*.aac,*.opus)"    Write-Host "`n  -Loop" -ForegroundColor Green
+    Write-Host "      Loop the selected music after it finishes playing"
+    Write-Host "      (cannot be used with -All)"
+    Write-Host "`n  -All" -ForegroundColor Green
+    Write-Host "      Play all music files in the folder"
+    Write-Host "      (cannot be used with -Loop)"    Write-Host "`n  -Help" -ForegroundColor Green
     Write-Host "      Display this help message"
     Write-Host "`nEXAMPLES:" -ForegroundColor Yellow
     Write-Host "  .\PlayPwsh.ps1"
@@ -45,6 +51,10 @@ function Show-Help {
     Write-Host "      Use custom music folder with recursive scan"
     Write-Host "`n  .\PlayPwsh.ps1 -FileTypes '*.mp3,*.flac'"
     Write-Host "      Only show MP3 and FLAC files"
+    Write-Host "`n  .\PlayPwsh.ps1 -All"
+    Write-Host "      Play all music files in the folder sequentially"
+    Write-Host "`n  play 'favorite song' -Loop"
+    Write-Host "      Loop the selected song continuously"
     Write-Host "`nPLAYBACK CONTROLS:" -ForegroundColor Yellow
     Write-Host "  q     - Quit playback"
     Write-Host "  s     - Toggle pause"
@@ -104,7 +114,8 @@ function Get-MusicFiles {
 
 function Play-Music {
     param(
-        [string]$FilePath
+        [string]$FilePath,
+        [bool]$ShouldLoop = $false
     )
     
     if (-not (Test-Path $FilePath)) {
@@ -114,10 +125,15 @@ function Play-Music {
     
     Write-Host "`nNow playing: " -NoNewline -ForegroundColor Green
     Write-Host (Split-Path $FilePath -Leaf) -ForegroundColor Cyan
-    Write-Host "Press Ctrl+C to stop playback`n" -ForegroundColor Gray
+    if ($ShouldLoop) {
+        Write-Host "(Looping - Press Ctrl+C to stop)`n" -ForegroundColor Yellow
+    } else {
+        Write-Host "Press Ctrl+C to stop playback`n" -ForegroundColor Gray
+    }
     
     # Start ffplay as a background process
-    $process = Start-Process -FilePath "ffplay" -ArgumentList "-nodisp", "-autoexit", "-loglevel", "error", "`"$FilePath`"" -PassThru -WindowStyle Hidden
+    $loopArg = if ($ShouldLoop) { "-loop", "0" } else { @() }
+    $process = Start-Process -FilePath "ffplay" -ArgumentList (@("-nodisp", "-autoexit", "-loglevel", "error") + $loopArg + @("`"$FilePath`"")) -PassThru -WindowStyle Hidden
     
     # Animation characters
     $frames = @('♪♫', '♫♪', '♪ ♫', '♫ ♪', '♪  ♫', '♫  ♪')
@@ -169,6 +185,8 @@ function global:Invoke-PlayMusic {
         [string]$Query,
         [switch]$Recursive,
         [switch]$Shuffle,
+        [switch]$Loop,
+        [switch]$All,
         [switch]$Help
     )
     
@@ -177,7 +195,7 @@ function global:Invoke-PlayMusic {
     if ($Help) {
         & $scriptPath -Help
     } else {
-        & $scriptPath -Query $Query -Recursive:$Recursive -Shuffle:$Shuffle
+        & $scriptPath -Query $Query -Recursive:$Recursive -Shuffle:$Shuffle -Loop:$Loop -All:$All
     }
 }
 
@@ -189,6 +207,12 @@ if ($MyInvocation.InvocationName -ne '.') {
     if ($Help) {
         Show-Help
         exit 0
+    }
+
+    # Validate that -Loop and -All are not used together
+    if ($Loop -and $All) {
+        Write-Host "Error: -Loop and -All parameters cannot be used together" -ForegroundColor Red
+        exit 1
     }
 
     if (-not (Test-Dependencies)) {
@@ -224,8 +248,13 @@ if ($Shuffle) {
     $fileList = $fileList | Get-Random -Count $fileList.Count
 }
 
+# If -All parameter is used, select all files
+if ($All) {
+    Write-Host "Playing all $($fileList.Count) music files..." -ForegroundColor Green
+    $selected = $fileList
+}
 # If query provided, try to auto-play best match
-if ($Query) {
+elseif ($Query) {
     # Filter files by query (case-insensitive)
     $matches = @($fileList | Where-Object { $_ -like "*$Query*" })
     
@@ -269,7 +298,7 @@ if ($selected -is [array]) {
 
 foreach ($item in $selectedFiles) {
     $fullPath = ($item -split "`t")[1]
-    Play-Music -FilePath $fullPath
+    Play-Music -FilePath $fullPath -ShouldLoop $Loop
 }
 
 Write-Host "`nPlayback complete!" -ForegroundColor Green
