@@ -36,3 +36,6 @@ if ($PSStyle.OutputRendering -ne "ANSI")
 
 # Batch Organization
 . "$PSScriptRoot\scripts\RePwsh.ps1"
+
+# Play Music
+. "$PSScriptRoot\scripts\PlayPwsh.ps1"
