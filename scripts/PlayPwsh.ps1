@@ -114,13 +114,52 @@ function Play-Music {
     
     Write-Host "`nNow playing: " -NoNewline -ForegroundColor Green
     Write-Host (Split-Path $FilePath -Leaf) -ForegroundColor Cyan
-    Write-Host "Press 'q' to quit, 's' to toggle pause" -ForegroundColor Gray
+    Write-Host "Press Ctrl+C to stop playback`n" -ForegroundColor Gray
     
-    # ffplay options:
-    # -nodisp: no video display window
-    # -autoexit: exit when playback finishes
-    # -loglevel quiet: reduce console output
-    & ffplay -nodisp -autoexit -loglevel quiet $FilePath
+    # Start ffplay as a background process
+    $process = Start-Process -FilePath "ffplay" -ArgumentList "-nodisp", "-autoexit", "-loglevel", "error", "`"$FilePath`"" -PassThru -WindowStyle Hidden
+    
+    # Animation characters
+    $frames = @('♪♫', '♫♪', '♪ ♫', '♫ ♪', '♪  ♫', '♫  ♪')
+    $bars = @('▁▂▃▄▅▆▇█', '█▇▆▅▄▃▂▁', '▃▄▅▆▇█▇▆', '▆▅▄▃▂▁▂▃')
+    $colors = @('Cyan', 'Magenta', 'Blue', 'Green', 'Yellow')
+    
+    $frameIndex = 0
+    $barIndex = 0
+    $colorIndex = 0
+    
+    # Hide cursor
+    [Console]::CursorVisible = $false
+    
+    try {
+        while (-not $process.HasExited) {
+            $frame = $frames[$frameIndex % $frames.Length]
+            $bar = $bars[$barIndex % $bars.Length]
+            $color = $colors[$colorIndex % $colors.Length]
+            
+            # Display animation
+            Write-Host "`r  $frame  $bar  $frame  " -NoNewline -ForegroundColor $color
+            
+            $frameIndex++
+            if ($frameIndex % 2 -eq 0) { $barIndex++ }
+            if ($frameIndex % 6 -eq 0) { $colorIndex++ }
+            
+            Start-Sleep -Milliseconds 200
+            
+            # Check if process still exists
+            if ($process.HasExited) { break }
+        }
+    }
+    finally {
+        # Show cursor again
+        [Console]::CursorVisible = $true
+        Write-Host "`r                              `r" -NoNewline
+        
+        # Cleanup process if still running
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # Export alias function for 'play' command
@@ -129,11 +168,17 @@ function global:Invoke-PlayMusic {
         [Parameter(Position=0)]
         [string]$Query,
         [switch]$Recursive,
-        [switch]$Shuffle
+        [switch]$Shuffle,
+        [switch]$Help
     )
     
     $scriptPath = Join-Path $PSScriptRoot "PlayPwsh.ps1"
-    & $scriptPath -Query $Query -Recursive:$Recursive -Shuffle:$Shuffle
+    
+    if ($Help) {
+        & $scriptPath -Help
+    } else {
+        & $scriptPath -Query $Query -Recursive:$Recursive -Shuffle:$Shuffle
+    }
 }
 
 Set-Alias -Name play -Value Invoke-PlayMusic -Scope Global
