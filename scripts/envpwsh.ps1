@@ -286,6 +286,12 @@ function envs {
 
     $validScopes = @('Process','User','Machine')
 
+    # Check if user typed a help-like argument (--help, -help, /?, etc.)
+    if ($Var -match '^(--?help|/\?|--?\?)$') {
+        $Help = $true
+        $Var = $null
+    }
+
     # Safeguard: Check if user typed 'clean' or 'merge' as a variable name instead of using the switch
     if ($Var -and -not $Clean -and -not $Merge) {
         if ($Var -ieq 'clean') {
