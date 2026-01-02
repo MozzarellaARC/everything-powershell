@@ -255,8 +255,21 @@ if ($All) {
 }
 # If query provided, try to auto-play best match
 elseif ($Query) {
-    # Filter files by query (case-insensitive)
-    $matches = @($fileList | Where-Object { $_ -like "*$Query*" })
+    # Split query into words for flexible fuzzy matching
+    $queryWords = $Query -split '\s+' | Where-Object { $_.Trim() -ne '' }
+    
+    # Filter files where all query words appear (order-independent, case-insensitive)
+    $matches = @($fileList | Where-Object {
+        $fileName = $_
+        $allWordsMatch = $true
+        foreach ($word in $queryWords) {
+            if ($fileName -notlike "*$word*") {
+                $allWordsMatch = $false
+                break
+            }
+        }
+        $allWordsMatch
+    })
     
     if ($matches.Count -eq 0) {
         Write-Host "No files matching '$Query' found" -ForegroundColor Yellow
