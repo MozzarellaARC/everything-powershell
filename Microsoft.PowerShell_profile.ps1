@@ -5,6 +5,7 @@ set-alias -name godot-cli -value Godot_v4.6-dev4_win64_console
 set-alias -name imgto -value imageto
 set-alias -name ff -value firefox
 set-alias -name img -value magick
+set-alias -name cc -value choco
 
 
 if ($PSStyle.OutputRendering -ne "ANSI")
@@ -39,3 +40,15 @@ if ($PSStyle.OutputRendering -ne "ANSI")
 
 # Play Music
 . "$PSScriptRoot\scripts\PlayPwsh.ps1"
+
+
+# Import the Chocolatey Profile that contains the necessary code to enable
+# tab-completions to function for `choco`.
+# Be aware that if you are missing these lines from your profile, tab completion
+# for `choco` will not function.
+# See https://ch0.co/tab-completion for details.
+$ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+if (Test-Path($ChocolateyProfile))
+{
+    Import-Module "$ChocolateyProfile"
+}
