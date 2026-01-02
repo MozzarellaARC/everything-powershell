@@ -112,6 +112,31 @@ function Get-MusicFiles {
     return ,@($files)
 }
 
+function Test-FuzzyMatch {
+    param(
+        [string]$Text,
+        [string]$Pattern
+    )
+    
+    # Convert to lowercase for case-insensitive matching
+    $text = $Text.ToLower()
+    $pattern = $Pattern.ToLower()
+    
+    $patternIndex = 0
+    $textIndex = 0
+    
+    # Check if all characters in pattern appear in text in order
+    while ($patternIndex -lt $pattern.Length -and $textIndex -lt $text.Length) {
+        if ($pattern[$patternIndex] -eq $text[$textIndex]) {
+            $patternIndex++
+        }
+        $textIndex++
+    }
+    
+    # Return true if all pattern characters were found in order
+    return $patternIndex -eq $pattern.Length
+}
+
 function Play-Music {
     param(
         [string]$FilePath,
@@ -258,12 +283,12 @@ elseif ($Query) {
     # Split query into words for flexible fuzzy matching
     $queryWords = $Query -split '\s+' | Where-Object { $_.Trim() -ne '' }
     
-    # Filter files where all query words appear (order-independent, case-insensitive)
+    # Filter files where all query words fuzzy match (allows typos, order-independent)
     $matches = @($fileList | Where-Object {
         $fileName = $_
         $allWordsMatch = $true
         foreach ($word in $queryWords) {
-            if ($fileName -notlike "*$word*") {
+            if (-not (Test-FuzzyMatch -Text $fileName -Pattern $word)) {
                 $allWordsMatch = $false
                 break
             }
