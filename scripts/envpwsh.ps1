@@ -1,15 +1,15 @@
 function envs {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='High')]
     param(
         [Parameter(Position=0)]
-        [string]$Var,
-
-        [Parameter(Position=1)]
         [ArgumentCompleter({
             param($commandName,$parameterName,$wordToComplete)
             'Process','User','Machine' | Where-Object { $_ -like "$wordToComplete*" }
         })]
         [string]$Scope,
+
+        [Parameter(Position=1)]
+        [string]$Name,
 
         [Parameter(Position=2)]
         [string]$Value,
@@ -51,6 +51,44 @@ function envs {
             Name  = $RecordName
             Value = $RecordValue
         }
+    }
+
+    function Confirm-EnvAction {
+        param(
+            [string]$Target,
+            [string]$Action
+        )
+
+        # Support -WhatIf
+        if ($WhatIfPreference) {
+            Write-Host "What if: $Action" -ForegroundColor Cyan
+            return $false
+        }
+
+        # Support -Confirm:$false
+        if ($PSBoundParameters.ContainsKey('Confirm') -and -not $Confirm) {
+            return $true
+        }
+
+        # Simple Yes/No prompt without help option
+        Write-Host "`nConfirm" -ForegroundColor Yellow
+        Write-Host $Action -ForegroundColor White
+        Write-Host $Target -ForegroundColor Cyan
+        
+        do {
+            $response = Read-Host "Continue? (Y/N)"
+            $response = $response.Trim().ToUpper()
+            
+            if ($response -eq 'Y' -or $response -eq 'YES') {
+                return $true
+            }
+            elseif ($response -eq 'N' -or $response -eq 'NO') {
+                return $false
+            }
+            else {
+                Write-Host "Please enter Y or N" -ForegroundColor Red
+            }
+        } while ($true)
     }
 
     function Format-EnvValueForDisplay {
@@ -287,22 +325,54 @@ function envs {
     $validScopes = @('Process','User','Machine')
 
     # Check if user typed a help-like argument (--help, -help, /?, etc.)
-    if ($Var -match '^(--?help|/\?|--?\?)$') {
+    if ($Scope -match '^(--?help|/\?|--?\?)$') {
         $Help = $true
-        $Var = $null
+        $Scope = $null
     }
 
     # Safeguard: Check if user typed 'clean' or 'merge' as a variable name instead of using the switch
-    if ($Var -and -not $Clean -and -not $Merge) {
-        if ($Var -ieq 'clean') {
+    if ($Name -and -not $Clean -and -not $Merge) {
+        if ($Name -ieq 'clean') {
             Write-Host "Do you mean -Clean? Clean requires parameters: [Scope] and [Variable]." -ForegroundColor Yellow
             Write-Host "Example: envs User Path -Clean" -ForegroundColor Cyan
             return
         }
-        if ($Var -ieq 'merge') {
+        if ($Name -ieq 'merge') {
             Write-Host "Do you mean -Merge? Merge requires parameters: [Scope] and [Variable]." -ForegroundColor Yellow
             Write-Host "Example: envs User Path -Merge" -ForegroundColor Cyan
             return
+        }
+    }
+
+    # Detect if Name looks like a path/value that should be expanded
+    # This handles cases like: envs user . -Append (where . should be current dir)
+    if ($PSBoundParameters.ContainsKey('Name') -and $Name) {
+        $looksLikePathValue = $Name -match '^\.\.?$|^[/\\]|^[a-zA-Z]:[/\\]' -or (Test-Path -LiteralPath $Name -ErrorAction SilentlyContinue)
+        
+        if ($looksLikePathValue -and -not $PSBoundParameters.ContainsKey('Value')) {
+            # User provided what looks like a value in the Name position
+            # Error if no operation switch is provided
+            if (-not $New -and -not $Append -and -not $Set) {
+                Write-Host "Error: '$Name' looks like a path value, not a variable name." -ForegroundColor Red
+                Write-Host "To add a path to an environment variable, specify the operation:" -ForegroundColor Yellow
+                Write-Host "  envs $Scope Path '$Name' -Append    # Add to PATH" -ForegroundColor Cyan
+                Write-Host "  envs $Scope MyVar '$Name' -New      # Create new variable" -ForegroundColor Cyan
+                Write-Host "  envs $Scope TOOLS '$Name' -Set      # Set variable and add to PATH" -ForegroundColor Cyan
+                return
+            }
+            
+            # Move Name to Value and default Name to 'Path' for path operations
+            $Value = $Name
+            $Name = 'Path'
+            
+            # Expand . and .. to full paths
+            if ($Value -eq '.') {
+                $Value = $PWD.Path
+            } elseif ($Value -eq '..') {
+                $Value = Split-Path -Parent $PWD.Path
+            } elseif (Test-Path -LiteralPath $Value -ErrorAction SilentlyContinue) {
+                $Value = (Resolve-Path -LiteralPath $Value).Path
+            }
         }
     }
 
@@ -311,35 +381,35 @@ function envs {
         if (-not $New -and -not $Append -and -not $Set) {
             Write-Host "Error: When providing a Value, you must specify one of: -New, -Append, or -Set" -ForegroundColor Red
             Write-Host "Examples:" -ForegroundColor Cyan
-            Write-Host "  envs MyVar User 'C:\Path' -New      # Create/overwrite variable" -ForegroundColor Gray
-            Write-Host "  envs Path User 'C:\Tools' -Append   # Append to existing variable" -ForegroundColor Gray
-            Write-Host "  envs JAVA_HOME User 'C:\Java' -Set  # Set variable and add %JAVA_HOME% to PATH" -ForegroundColor Gray
+            Write-Host "  envs User MyVar 'C:\Path' -New      # Create/overwrite variable" -ForegroundColor Gray
+            Write-Host "  envs User Path 'C:\Tools' -Append   # Append to existing variable" -ForegroundColor Gray
+            Write-Host "  envs User JAVA_HOME 'C:\Java' -Set  # Set variable and add %JAVA_HOME% to PATH" -ForegroundColor Gray
             return
         }
-    }
-
-    if ($PSBoundParameters.ContainsKey('Var') -and $PSBoundParameters.ContainsKey('Scope')) {
-        $varLooksLikeScope = $Var -and ($validScopes | Where-Object { $_ -ieq $Var })
-        $scopeLooksLikeScope = $Scope -and ($validScopes | Where-Object { $_ -ieq $Scope })
-
-        if ($varLooksLikeScope -and -not $scopeLooksLikeScope) {
-            $temp = $Var
-            $Var = $Scope
-            $Scope = $temp
+        
+        # Expand . and .. in Value parameter to full paths
+        if ($Value -eq '.') {
+            $Value = $PWD.Path
+        } elseif ($Value -eq '..') {
+            $Value = Split-Path -Parent $PWD.Path
+        } elseif ($Value -and (Test-Path -LiteralPath $Value -ErrorAction SilentlyContinue)) {
+            # Expand relative paths to absolute paths
+            $Value = (Resolve-Path -LiteralPath $Value).Path
         }
     }
 
-    # Default Scope to 'Process' if not provided
-    if ([string]::IsNullOrEmpty($Scope)) {
-        $Scope = 'Process'
-    }
-
-    if ($Scope) {
+    # Validate Scope if provided
+    if ($PSBoundParameters.ContainsKey('Scope') -and $Scope) {
         $normalizedScope = ($validScopes | Where-Object { $_ -ieq $Scope } | Select-Object -First 1)
         if (-not $normalizedScope) {
             throw "Scope must be one of: $($validScopes -join ', ')."
         }
         $Scope = $normalizedScope
+    }
+
+    # Default Scope to 'Process' if not provided
+    if ([string]::IsNullOrEmpty($Scope)) {
+        $Scope = 'Process'
     }
 
     # If no arguments at all -> list every scope combined
@@ -360,40 +430,48 @@ function envs {
 envs - Environment variable helper
 
 USAGE:
-    envs <Var> [Scope]                 Get variable at scope (default Scope=Process)
-    envs <Scope> [Var]                 Scope-first aliases (envs User Path)
-    envs <Scope>                       List all variables for that scope (Process|User|Machine)
+    envs [Scope] [Name]                Get variable at scope (default Scope=Process)
+    envs [Scope]                       List all variables for that scope (Process|User|Machine)
     envs                               List all variables for all scopes
 
-    envs <Var> <Scope> <Value> -New    Create or overwrite variable
-    envs <Var> <Scope> <Value> -Append Append literal value to existing variable (semicolon separator)
-    envs <Var> <Scope> <Value> -Set    Set variable then append %Var% token to PATH at same scope
-    envs <Var> <Scope> -Clean          Remove duplicate values from semicolon-separated variable
-    envs <Var> <Scope> -Merge          Expand %VAR% references to actual values and delete referenced vars
+    envs <Scope> <Name> <Value> -New    Create or overwrite variable
+    envs <Scope> <Name> <Value> -Append Append literal value to existing variable (semicolon separator)
+    envs <Scope> <Name> <Value> -Set    Set variable then append %Name% token to PATH at same scope
+    envs <Scope> <Name> -Clean          Remove duplicate values from semicolon-separated variable
+    envs <Scope> <Name> -Merge          Expand %VAR% references to actual values and delete referenced vars
+
+PARAMETER ORDER (STRICT):
+    1. Scope  - Process, User, or Machine (optional, defaults to Process)
+    2. Name   - Variable name (required for most operations)
+    3. Value  - Variable value (required with -New, -Append, or -Set)
 
 SWITCHES:
     -New        Create or overwrite the variable with the provided Value
     -Append     Append provided Value to existing variable (adds ';' if needed)
-    -Set        Set variable and add %Var% to PATH (if not already there)
+    -Set        Set variable and add %Name% to PATH (if not already there)
     -Clean      Remove duplicate entries from variable (case-insensitive, normalized path comparison)
     -Merge      Expand all %VAR% references in variable to their actual values, then delete those vars
     -Refresh    After modifying User/Machine, rebuild process PATH (Machine;User) and load changed var
+    -Confirm    Prompt for confirmation before making changes (enabled by default for all modifications)
+    -WhatIf     Show what would happen without making actual changes
     -Help/-?    Show this help
 
 EXAMPLES:
-    envs Path User                     Get user PATH
+    envs User Path                     Get user PATH
     envs User                          List all user variables
-    envs User Path                     Get user PATH using scope-first syntax
     envs                               List all variables (Process, User, Machine)
-    envs MY_VAR User 'C:\MyPath' -New -Refresh
-    envs TOOLS_HOME User 'C:\Tools' -Set -Refresh
-    envs Path User 'C:\ExtraBin' -Append -Refresh
-    envs MY_TEMP Process '123' -New    Set process-only variable
-    envs Path User -Clean -Refresh     Remove duplicate paths from user PATH
-    envs Path User -Merge -Refresh     Expand %VAR% references and remove those variables
+    envs User MY_VAR 'C:\MyPath' -New -Refresh
+    envs User TOOLS_HOME 'C:\Tools' -Set -Refresh
+    envs User Path 'C:\ExtraBin' -Append -Refresh
+    envs Process MY_TEMP '123' -New    Set process-only variable
+    envs User Path -Clean -Refresh     Remove duplicate paths from user PATH
+    envs User Path -Merge -Refresh     Expand %VAR% references and remove those variables
 
 NOTES:
     - When providing a Value, you MUST specify -New, -Append, or -Set.
+    - All modification operations (-New, -Append, -Set, -Clean, -Merge) require confirmation by default.
+    - Use -Confirm:$false to skip confirmation prompts (e.g., in scripts).
+    - Use -WhatIf to preview changes without executing them.
     - Use -New to create or overwrite a variable with a new value.
     - Use -Set for directory variables you want on PATH via %VARNAME% expansion.
     - Append expects directories (for PATH) not executables.
@@ -410,12 +488,9 @@ NOTES:
 
         # Detect single scope usage BEFORE default Scope parameter masking it.
     $singleScopeList = $false
-    if ($PSBoundParameters.Count -eq 1 -and $PSBoundParameters.ContainsKey('Var')) {
-        if ($Var -in 'Process','User','Machine') { $singleScopeList = $true }
-    }
-    elseif ($PSBoundParameters.Count -eq 1 -and $PSBoundParameters.ContainsKey('Scope') -and -not $PSBoundParameters.ContainsKey('Var')) {
-        # user used named -Scope only
-        if ($Scope -in 'Process','User','Machine') { $singleScopeList = $true; $Var = $null }
+    if ($PSBoundParameters.Count -eq 1 -and $PSBoundParameters.ContainsKey('Scope') -and -not $PSBoundParameters.ContainsKey('Name')) {
+        # user provided only scope
+        if ($Scope -in 'Process','User','Machine') { $singleScopeList = $true }
     }
 
     $originalProcessValue = $null
@@ -423,15 +498,15 @@ NOTES:
     $result = $null
 
     if ($singleScopeList) {
-        $result = Get-AllScopeVars -ListScope ($Var ?? $Scope)
+        $result = Get-AllScopeVars -ListScope $Scope
     }
     else {
         if ($Clean) {
-            if (-not $Var) { throw "-Clean requires a variable name (first positional argument)." }
+            if (-not $Name) { throw "-Clean requires a variable name (second positional argument)." }
 
-            $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            $current = [Environment]::GetEnvironmentVariable($Name, $Scope)
             if ([string]::IsNullOrEmpty($current)) {
-                Write-Warning "Variable '$Var' at scope '$Scope' is empty or does not exist."
+                Write-Warning "Variable '$Name' at scope '$Scope' is empty or does not exist."
                 return
             }
 
@@ -439,26 +514,29 @@ NOTES:
             $cleaned = Remove-DuplicateValues -ValueString $current -RemovedDuplicates ([ref]$removedDuplicates)
 
             if ($cleaned -eq $current) {
-                Write-Host "$Scope $Var is clean! Skipping clean command." -ForegroundColor Green
-                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
+                Write-Host "$Scope $Name is clean! Skipping clean command." -ForegroundColor Green
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue $current
             } else {
-                [Environment]::SetEnvironmentVariable($Var, $cleaned, $Scope)
-                $didModify = $true
+                if (Confirm-EnvAction -Target "$Scope\$Name" -Action "Clean duplicate values") {
+                    [Environment]::SetEnvironmentVariable($Name, $cleaned, $Scope)
+                    $didModify = $true
+                    # Show which values were cleaned
+                    foreach ($duplicate in $removedDuplicates) {
+                        Write-Host "Removed duplicate: $duplicate" -ForegroundColor Yellow
+                    }
 
-                # Show which values were cleaned
-                foreach ($duplicate in $removedDuplicates) {
-                    Write-Host "Removed duplicate: $duplicate" -ForegroundColor Yellow
+                    $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue $cleaned
+                } else {
+                    return
                 }
-
-                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $cleaned
             }
         }
         elseif ($Merge) {
-            if (-not $Var) { throw "-Merge requires a variable name (first positional argument)." }
+            if (-not $Name) { throw "-Merge requires a variable name (second positional argument)." }
 
-            $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            $current = [Environment]::GetEnvironmentVariable($Name, $Scope)
             if ([string]::IsNullOrEmpty($current)) {
-                Write-Warning "Variable '$Var' at scope '$Scope' is empty or does not exist."
+                Write-Warning "Variable '$Name' at scope '$Scope' is empty or does not exist."
                 return
             }
 
@@ -466,43 +544,47 @@ NOTES:
             $merged = Expand-VariableReferences -ValueString $current -TargetScope $Scope -ReferencedVars ([ref]$referencedVars)
 
             if ($merged -eq $current) {
-                Write-Host "No variable references found in '$Var' at scope '$Scope'."
-                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $current
+                Write-Host "No variable references found in '$Name' at scope '$Scope'."
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue $current
             } else {
-                # Update the variable with expanded values
-                [Environment]::SetEnvironmentVariable($Var, $merged, $Scope)
-                $didModify = $true
-                Write-Host "Merged variable references in '$Var' at scope '$Scope'."
+                if (Confirm-EnvAction -Target "$Scope\$Name" -Action "Merge variable references and delete referenced variables") {
+                    # Update the variable with expanded values
+                    [Environment]::SetEnvironmentVariable($Name, $merged, $Scope)
+                    $didModify = $true
+                    Write-Host "Merged variable references in '$Name' at scope '$Scope'."
 
-                # Delete the referenced variables
-                if ($referencedVars -and $referencedVars.Count -gt 0) {
-                    foreach ($refVarName in $referencedVars.Keys) {
-                        Write-Host "Deleting referenced variable '$refVarName' from scope '$Scope'..." -ForegroundColor Cyan
+                    # Delete the referenced variables
+                    if ($referencedVars -and $referencedVars.Count -gt 0) {
+                        foreach ($refVarName in $referencedVars.Keys) {
+                            Write-Host "Deleting referenced variable '$refVarName' from scope '$Scope'..." -ForegroundColor Cyan
 
-                        # Actually delete the variable based on scope
-                        if ($Scope -eq 'User') {
-                            Remove-ItemProperty -Path "HKCU:\Environment" -Name $refVarName -ErrorAction SilentlyContinue
-                        }
-                        elseif ($Scope -eq 'Machine') {
-                            Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" -Name $refVarName -ErrorAction SilentlyContinue
-                        }
-                        else {
-                            # Process scope - just remove from environment
-                            Remove-Item -Path "Env:$refVarName" -ErrorAction SilentlyContinue
+                            # Actually delete the variable based on scope
+                            if ($Scope -eq 'User') {
+                                Remove-ItemProperty -Path "HKCU:\Environment" -Name $refVarName -ErrorAction SilentlyContinue
+                            }
+                            elseif ($Scope -eq 'Machine') {
+                                Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" -Name $refVarName -ErrorAction SilentlyContinue
+                            }
+                            else {
+                                # Process scope - just remove from environment
+                                Remove-Item -Path "Env:$refVarName" -ErrorAction SilentlyContinue
+                            }
                         }
                     }
-                }
 
-                $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue $merged
+                    $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue $merged
+                } else {
+                    return
+                }
             }
         }
         elseif ($Set) {
-            if (-not $Var) { throw "-Set requires a variable name (first positional argument)." }
+            if (-not $Name) { throw "-Set requires a variable name (second positional argument)." }
             if (-not $PSBoundParameters.ContainsKey('Value')) { throw "-Set requires -Value (third positional argument)." }
             $incoming = $Value
-            $existing = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            $existing = [Environment]::GetEnvironmentVariable($Name, $Scope)
             if (Test-ContainsSemicolonValue -Current $existing -Candidate $incoming) {
-                Throw-EnvError -Message "Variable '$Var' at scope '$Scope' already contains value '$incoming'." -ErrorId 'EnvVariableDuplicateValue' -Target $Var
+                Throw-EnvError -Message "Variable '$Name' at scope '$Scope' already contains value '$incoming'." -ErrorId 'EnvVariableDuplicateValue' -Target $Name
             }
             $Value = if (-not [string]::IsNullOrEmpty($existing)) {
                 Join-SemicolonValue -Current $existing -Addition $incoming
@@ -514,12 +596,12 @@ NOTES:
             $token = $null
             $newPath = $null
             $shouldUpdatePath = $false
-            if ($Var -ine 'PATH') {
+            if ($Name -ine 'PATH') {
                 $pathCurrent = [Environment]::GetEnvironmentVariable('Path', $Scope)
                 if (Test-ContainsSemicolonValue -Current $pathCurrent -Candidate $incoming) {
                     Throw-EnvError -Message "PATH at scope '$Scope' already contains value '$incoming'." -ErrorId 'EnvPathDuplicateValue' -Target 'Path'
                 }
-                $token = "%$Var%"
+                $token = "%$Name%"
                 $shouldUpdatePath = $true
                 $already = $false
                 if ($pathCurrent) {
@@ -536,50 +618,64 @@ NOTES:
             }
 
             # Set the variable itself first
-            [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
-            $didModify = $true
-            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+            $pathUpdateMsg = if ($shouldUpdatePath -and $newPath) { " and add %$Name% to PATH" } else { "" }
+            if (Confirm-EnvAction -Target "$Scope\$Name = '$Value'" -Action "Set variable$pathUpdateMsg") {
+                [Environment]::SetEnvironmentVariable($Name, $Value, $Scope)
+                $didModify = $true
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue ([Environment]::GetEnvironmentVariable($Name, $Scope))
 
-            # Now append a reference %Var% to PATH at same scope (if Var not PATH itself)
-            if ($Var -ine 'PATH') {
-                if ($shouldUpdatePath -and $newPath) {
-                    [Environment]::SetEnvironmentVariable('Path', $newPath, $Scope)
-                    Write-Verbose "Appended $token to PATH at scope $Scope."
-                } else {
-                    Write-Verbose "$token already present in PATH at scope $Scope."
+                # Now append a reference %Name% to PATH at same scope (if Name not PATH itself)
+                if ($Name -ine 'PATH') {
+                    if ($shouldUpdatePath -and $newPath) {
+                        [Environment]::SetEnvironmentVariable('Path', $newPath, $Scope)
+                        Write-Verbose "Appended $token to PATH at scope $Scope."
+                    } else {
+                        Write-Verbose "$token already present in PATH at scope $Scope."
+                    }
                 }
+            } else {
+                return
             }
         }
         elseif ($Append) {
             if (-not $PSBoundParameters.ContainsKey('Value')) {
                 throw "-Append requires -Value to supply what to append."
             }
-            if (-not $Var) { throw "-Append requires a variable name (first positional argument)." }
-            $current = [Environment]::GetEnvironmentVariable($Var, $Scope)
+            if (-not $Name) { throw "-Append requires a variable name (second positional argument)." }
+            $current = [Environment]::GetEnvironmentVariable($Name, $Scope)
             if (Test-ContainsSemicolonValue -Current $current -Candidate $Value) {
-                Throw-EnvError -Message "Variable '$Var' at scope '$Scope' already contains value '$Value'." -ErrorId 'EnvVariableDuplicateValue' -Target $Var
+                Throw-EnvError -Message "Variable '$Name' at scope '$Scope' already contains value '$Value'." -ErrorId 'EnvVariableDuplicateValue' -Target $Name
             }
             $newValue = Join-SemicolonValue -Current $current -Addition $Value
-            [Environment]::SetEnvironmentVariable($Var, $newValue, $Scope)
-            $didModify = $true
-            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+            if (Confirm-EnvAction -Target "$Scope\$Name" -Action "Append '$Value'") {
+                [Environment]::SetEnvironmentVariable($Name, $newValue, $Scope)
+                $didModify = $true
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue ([Environment]::GetEnvironmentVariable($Name, $Scope))
+            } else {
+                return
+            }
         }
         elseif ($PSBoundParameters.ContainsKey('Value')) {
-            if (-not $Var) { throw "Setting a value requires a variable name (first positional argument)." }
+            if (-not $Name) { throw "Setting a value requires a variable name (second positional argument)." }
             # This handles -New switch: create or overwrite the variable
-            [Environment]::SetEnvironmentVariable($Var, $Value, $Scope)
-            $didModify = $true
-            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+            $actionVerb = if ([Environment]::GetEnvironmentVariable($Name, $Scope)) { "Overwrite" } else { "Create" }
+            if (Confirm-EnvAction -Target "$Scope\$Name = '$Value'" -Action "$actionVerb variable") {
+                [Environment]::SetEnvironmentVariable($Name, $Value, $Scope)
+                $didModify = $true
+                $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue ([Environment]::GetEnvironmentVariable($Name, $Scope))
+            } else {
+                return
+            }
         }
         else {
-            if (-not $Var) { throw "Provide a variable name or a single scope (Process/User/Machine) to list all." }
-            $result = New-EnvRecord -RecordScope $Scope -RecordName $Var -RecordValue ([Environment]::GetEnvironmentVariable($Var, $Scope))
+            if (-not $Name) { throw "Provide a variable name or a single scope (Process/User/Machine) to list all." }
+            $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue ([Environment]::GetEnvironmentVariable($Name, $Scope))
         }
     }
 
     if ($Refresh -and $didModify) {
         if ($Scope -in 'User','Machine') {
-            if ($Var -ieq 'PATH' -or $Set -or $Append) {
+            if ($Name -ieq 'PATH' -or $Set -or $Append) {
                 $machinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
                 $userPath    = [Environment]::GetEnvironmentVariable('Path','User')
                 $combined = if ([string]::IsNullOrEmpty($machinePath)) { $userPath } elseif ([string]::IsNullOrEmpty($userPath)) { $machinePath } else { "$machinePath;$userPath" }
@@ -587,11 +683,11 @@ NOTES:
                 $env:Path = $combined
                 Write-Verbose "Process PATH refreshed (was length $($originalProcessValue.Length), now $($env:Path.Length))."
             } else {
-                $valToLoad = [Environment]::GetEnvironmentVariable($Var, $Scope)
+                $valToLoad = [Environment]::GetEnvironmentVariable($Name, $Scope)
                 if ($null -eq $valToLoad) {
-                    Remove-Item -Path "Env:$Var" -ErrorAction SilentlyContinue
+                    Remove-Item -Path "Env:$Name" -ErrorAction SilentlyContinue
                 } else {
-                    Set-Item -Path "Env:$Var" -Value $valToLoad
+                    Set-Item -Path "Env:$Name" -Value $valToLoad
                 }
             }
         }
