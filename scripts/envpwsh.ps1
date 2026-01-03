@@ -143,22 +143,16 @@ function envs {
             return $true
         }
 
-        # Detailed confirmation dialog
-        Write-Host "`n========================================" -ForegroundColor Yellow
-        Write-Host "  CONFIRMATION REQUIRED" -ForegroundColor Yellow
-        Write-Host "========================================" -ForegroundColor Yellow
-        Write-Host "`nAction:" -ForegroundColor White -NoNewline
-        Write-Host "  $Action" -ForegroundColor Cyan
-        Write-Host "Target:" -ForegroundColor White -NoNewline
-        Write-Host "  $Target" -ForegroundColor Cyan
-        Write-Host "`nThis operation will modify environment variables." -ForegroundColor DarkYellow
-        Write-Host "Changes may affect system behavior and running applications." -ForegroundColor DarkYellow
-        Write-Host "========================================`n" -ForegroundColor Yellow
+        # Confirmation prompt
+        Write-Host ""
+        Write-Host "Confirm" -ForegroundColor Yellow
+        Write-Host "$Action" -ForegroundColor White
+        Write-Host "Target: " -NoNewline -ForegroundColor DarkGray
+        Write-Host "$Target" -ForegroundColor Cyan
+        Write-Host ""
         
         do {
-            Write-Host "Do you want to proceed with this operation? " -ForegroundColor White -NoNewline
-            Write-Host "[Y] Yes  [N] No" -ForegroundColor Gray -NoNewline
-            Write-Host ": " -NoNewline
+            Write-Host "[Y] Yes  [N] No: " -ForegroundColor Gray -NoNewline
             $response = Read-Host
             $response = $response.Trim().ToUpper()
             
@@ -166,11 +160,11 @@ function envs {
                 return $true
             }
             elseif ($response -eq 'N' -or $response -eq 'NO') {
-                Write-Host "Operation cancelled." -ForegroundColor Red
+                Write-Host "Operation cancelled.`n" -ForegroundColor Red
                 return $false
             }
             else {
-                Write-Host "Invalid input. Please enter Y (Yes) or N (No)." -ForegroundColor Red
+                Write-Host "Invalid input. Please enter Y or N." -ForegroundColor Red
             }
         } while ($true)
     }
