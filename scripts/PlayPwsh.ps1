@@ -137,6 +137,40 @@ function Test-FuzzyMatch {
     return $patternIndex -eq $pattern.Length
 }
 
+function Get-ActualFFplayPath {
+    # Try to find the actual ffplay.exe, not the shim
+    $ffplayCmd = Get-Command ffplay -ErrorAction SilentlyContinue
+    
+    if ($ffplayCmd) {
+        $ffplayPath = $ffplayCmd.Source
+        
+        # If it's a shim from Chocolatey, find the actual exe
+        if ($ffplayPath -match 'chocolatey.*shims') {
+            $chocoPath = Join-Path $env:ChocolateyInstall "lib\ffmpeg\tools\ffmpeg\bin\ffplay.exe"
+            if (Test-Path $chocoPath) {
+                return $chocoPath
+            }
+        }
+        
+        # If it's a shim from Scoop, find the actual exe
+        if ($ffplayPath -match 'scoop.*shims') {
+            $scoopPath = Join-Path $env:SCOOP "apps\ffmpeg\current\bin\ffplay.exe"
+            if (Test-Path $scoopPath) {
+                return $scoopPath
+            }
+            # Try user scoop path
+            $userScoopPath = Join-Path $env:USERPROFILE "scoop\apps\ffmpeg\current\bin\ffplay.exe"
+            if (Test-Path $userScoopPath) {
+                return $userScoopPath
+            }
+        }
+        
+        return $ffplayPath
+    }
+    
+    return "ffplay"
+}
+
 function Play-Music {
     param(
         [string]$FilePath,
@@ -151,14 +185,23 @@ function Play-Music {
     Write-Host "`nNow playing: " -NoNewline -ForegroundColor Green
     Write-Host (Split-Path $FilePath -Leaf) -ForegroundColor Cyan
     if ($ShouldLoop) {
-        Write-Host "(Looping - Press Ctrl+C to stop)`n" -ForegroundColor Yellow
+        Write-Host "(Looping - Press 'q' or Ctrl+C to stop)`n" -ForegroundColor Yellow
     } else {
-        Write-Host "Press Ctrl+C to stop playback`n" -ForegroundColor Gray
+        Write-Host "Press 'q' or Ctrl+C to stop playback`n" -ForegroundColor Gray
     }
     
-    # Start ffplay as a background process
-    $loopArg = if ($ShouldLoop) { "-loop", "0" } else { @() }
-    $process = Start-Process -FilePath "ffplay" -ArgumentList (@("-nodisp", "-autoexit", "-loglevel", "error") + $loopArg + @("`"$FilePath`"")) -PassThru -WindowStyle Hidden
+    # Get the actual ffplay.exe path, bypassing shims
+    $ffplayExe = Get-ActualFFplayPath
+    
+    # Build arguments - file path must be quoted if it contains spaces
+    $loopArg = if ($ShouldLoop) { @("-loop", "0") } else { @() }
+    $arguments = @("-nodisp", "-autoexit", "-loglevel", "error") + $loopArg + @("`"$FilePath`"")
+    
+    # Join arguments into a single string for proper space handling
+    $argumentString = $arguments -join ' '
+    
+    # Use & operator to call directly in the current console - this allows Ctrl+C to work
+    $process = Start-Process -FilePath $ffplayExe -ArgumentList $argumentString -PassThru -NoNewWindow
     
     # Animation characters
     $frames = @('♪♫', '♫♪', '♪ ♫', '♫ ♪', '♪  ♫', '♫  ♪')
