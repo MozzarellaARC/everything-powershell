@@ -682,7 +682,21 @@ NOTES:
         }
         else {
             if (-not $Name) { throw "Provide a variable name or a single scope (Process/User/Machine) to list all." }
-            $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue ([Environment]::GetEnvironmentVariable($Name, $Scope))
+            
+            # Check if user provided -New, -Set, or -Append without -Value
+            if ($New) {
+                Throw-EnvError -Message "The -New parameter requires a value. Please specify -Value followed by the content you want to set for '$Name'." -ErrorId 'EnvNewMissingValue' -Target $Name
+            }
+            elseif ($Set) {
+                Throw-EnvError -Message "The -Set parameter requires a value. Please specify -Value followed by the content you want to set for '$Name'." -ErrorId 'EnvSetMissingValue' -Target $Name
+            }
+            
+            # User is querying a variable
+            $varValue = [Environment]::GetEnvironmentVariable($Name, $Scope)
+            if ($null -eq $varValue) {
+                Throw-EnvError -Message "Environment variable '$Name' does not exist in scope '$Scope'. Use 'envs $Scope $Name <value> -New' to create it." -ErrorId 'EnvVariableNotFound' -Target $Name
+            }
+            $result = New-EnvRecord -RecordScope $Scope -RecordName $Name -RecordValue $varValue
         }
     }
 
