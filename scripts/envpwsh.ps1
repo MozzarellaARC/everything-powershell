@@ -70,23 +70,34 @@ function envs {
             return $true
         }
 
-        # Simple Yes/No prompt without help option
-        Write-Host "`nConfirm" -ForegroundColor Yellow
-        Write-Host $Action -ForegroundColor White
-        Write-Host $Target -ForegroundColor Cyan
+        # Detailed confirmation dialog
+        Write-Host "`n========================================" -ForegroundColor Yellow
+        Write-Host "  CONFIRMATION REQUIRED" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "`nAction:" -ForegroundColor White -NoNewline
+        Write-Host "  $Action" -ForegroundColor Cyan
+        Write-Host "Target:" -ForegroundColor White -NoNewline
+        Write-Host "  $Target" -ForegroundColor Cyan
+        Write-Host "`nThis operation will modify environment variables." -ForegroundColor DarkYellow
+        Write-Host "Changes may affect system behavior and running applications." -ForegroundColor DarkYellow
+        Write-Host "========================================`n" -ForegroundColor Yellow
         
         do {
-            $response = Read-Host "Continue? (Y/N)"
+            Write-Host "Do you want to proceed with this operation? " -ForegroundColor White -NoNewline
+            Write-Host "[Y] Yes  [N] No" -ForegroundColor Gray -NoNewline
+            Write-Host ": " -NoNewline
+            $response = Read-Host
             $response = $response.Trim().ToUpper()
             
             if ($response -eq 'Y' -or $response -eq 'YES') {
                 return $true
             }
             elseif ($response -eq 'N' -or $response -eq 'NO') {
+                Write-Host "Operation cancelled." -ForegroundColor Red
                 return $false
             }
             else {
-                Write-Host "Please enter Y or N" -ForegroundColor Red
+                Write-Host "Invalid input. Please enter Y (Yes) or N (No)." -ForegroundColor Red
             }
         } while ($true)
     }
@@ -639,9 +650,11 @@ NOTES:
         }
         elseif ($Append) {
             if (-not $PSBoundParameters.ContainsKey('Value')) {
-                throw "-Append requires -Value to supply what to append."
+                Throw-EnvError -Message "The -Append parameter requires a value to append. Please specify -Value followed by the content you want to add." -ErrorId 'EnvAppendMissingValue' -Target $Name
             }
-            if (-not $Name) { throw "-Append requires a variable name (second positional argument)." }
+            if (-not $Name) {
+                Throw-EnvError -Message "The -Append parameter requires a variable name. Please specify the name of the environment variable as the second argument." -ErrorId 'EnvAppendMissingName' -Target $null
+            }
             $current = [Environment]::GetEnvironmentVariable($Name, $Scope)
             if (Test-ContainsSemicolonValue -Current $current -Candidate $Value) {
                 Throw-EnvError -Message "Variable '$Name' at scope '$Scope' already contains value '$Value'." -ErrorId 'EnvVariableDuplicateValue' -Target $Name
